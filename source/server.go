@@ -9,6 +9,7 @@ import (
 	"open93athome-golang/source/logger"
 
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
 	socketio "github.com/googollee/go-socket.io"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 )
@@ -96,13 +97,14 @@ func SetupServer(ip string, port string, database *mongo.Client) {
 	// 添加日志过滤中间件
 	r.Use(filterLogs())
 
-	// 创建各种路由
+	// 根路由
 	r.GET("/", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
-			"message": "HelloWorld",
+			"success": "Open93AtHome-Golang",
 		})
 	})
 
+	// challenge 路由
 	r.GET("/openbmclapi-agent/challenge", func(c *gin.Context) {
 		var err error
 		clusters, err = GetClusters(database, "93athome", "cluster")
@@ -145,6 +147,67 @@ func SetupServer(ip string, port string, database *mongo.Client) {
 
 		c.JSON(http.StatusOK, gin.H{
 			"challenge": token,
+		})
+	})
+
+	r.POST("/openbmclapi-agent/token", func(c *gin.Context) {
+		var req struct {
+			ClusterId string `json:"clusterId"`
+			Signature string `json:"signature"`
+			Challenge string `json:"challenge"`
+		}
+
+		if err := c.BindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+			return
+		}
+
+		jwtHelper, err := Helper.GetInstance()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error initializing JWT helper"})
+			return
+		}
+
+		token, err := jwtHelper.VerifyToken(req.Challenge, "cluster-challenge")
+		if err != nil {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Invalid challenge token1"})
+			return
+		}
+
+		claims, ok := token.Claims.(jwt.MapClaims)
+		if !ok || !token.Valid {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Invalid challenge token2"})
+			return
+		}
+
+		clusterIdFromToken, ok := claims["data"].(map[string]interface{})["clusterId"].(string)
+		if !ok || clusterIdFromToken != req.ClusterId {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Cluster ID mismatch"})
+			return
+		}
+
+		cluster, found := findClusterById(req.ClusterId)
+		if !found {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Cluster not found"})
+			return
+		}
+
+		if !computeSignature(req.Challenge, req.Signature, cluster.ClusterSecret) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Invalid signature"})
+			return
+		}
+
+		newToken, err := jwtHelper.IssueToken(map[string]interface{}{
+			"clusterId": req.ClusterId,
+		}, "cluster", 60*60*24)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error issuing token"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"token": newToken,
+			"ttl":   1000 * 60 * 60 * 24, // 24小时
 		})
 	})
 
