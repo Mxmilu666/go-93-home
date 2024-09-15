@@ -47,6 +47,25 @@ func main() {
 		return
 	}
 
+	// 输出同步源的数量和详细信息
+	logger.Info("Number of sync sources: %d", len(config.SyncSources))
+	for i, syncSource := range config.SyncSources {
+		logger.Info("Sync Source %d: URL=%s, Branch=%s, DestDir=%s", i+1, syncSource.URL, syncSource.Branch, syncSource.DestDir)
+		// Clone or pull the Git repo
+		err := source.CloneOrPullRepo(syncSource.URL, syncSource.Branch, syncSource.DestDir)
+		if err != nil {
+			logger.Error("Error syncing repository %s: %v", syncSource.URL, err)
+			return
+		}
+
+		// 同步文件并将文件信息写入 MongoDB
+		err = source.SyncFiles(database, syncSource)
+		if err != nil {
+			logger.Error("Error syncing files: %v", err)
+			return
+		}
+	}
+
 	// 确保 CLUSTER 集合存在
 	err = source.EnsureClusterCollection(database, "93athome", "cluster")
 	if err != nil {

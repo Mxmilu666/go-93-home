@@ -18,10 +18,16 @@ type DatabaseConfig struct {
 	Password string `yaml:"password"`
 }
 
+type SyncSourceConfig struct {
+	URL     string `yaml:"url"`
+	Branch  string `yaml:"branch"`
+	DestDir string `yaml:"destDir"`
+}
+
 type Config struct {
-	Server    ServerConfig   `yaml:"server"`
-	Database  DatabaseConfig `yaml:"database"`
-	CacheDest string         `yaml:"dest"`
+	Server      ServerConfig       `yaml:"server"`
+	Database    DatabaseConfig     `yaml:"database"`
+	SyncSources []SyncSourceConfig `yaml:"syncSources"`
 }
 
 func CreateDefaultConfig(filename string) error {
@@ -36,7 +42,18 @@ func CreateDefaultConfig(filename string) error {
 			Username: "mongo",
 			Password: "mongo",
 		},
-		CacheDest: "cache",
+		SyncSources: []SyncSourceConfig{
+			{
+				URL:     "https://github.com/example/repo1.git",
+				Branch:  "main",
+				DestDir: "repo1",
+			},
+			{
+				URL:     "https://github.com/example/repo2.git",
+				Branch:  "dev",
+				DestDir: "repo2",
+			},
+		},
 	}
 
 	file, err := os.Create(filename)
