@@ -263,6 +263,21 @@ func SetupServer(ip string, port string, database *mongo.Client) {
 		c.Data(http.StatusOK, "application/octet-stream", avroData)
 	})
 
+	// configuration 路由
+	r.GET("/openbmclapi/configuration", func(c *gin.Context) {
+        if !verifyClusterRequest(c) {
+            c.AbortWithStatus(http.StatusForbidden)
+            return
+        }
+        response := gin.H{
+            "sync": gin.H{
+                "concurrency": 10,
+                "source":      "center",
+            },
+        }
+        c.JSON(http.StatusOK, response)
+    })
+
 	// 使用 Gin 处理 WebSocket 请求
 	r.GET("/socket.io/*any", gin.WrapH(server))
 	r.POST("/socket.io/*any", gin.WrapH(server))
