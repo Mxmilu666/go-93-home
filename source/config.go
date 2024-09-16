@@ -19,7 +19,7 @@ type DatabaseConfig struct {
 }
 
 type SyncSourceConfig struct {
-	NAME    string `yaml:name`
+	NAME    string `yaml:"name"`
 	URL     string `yaml:"url"`
 	Branch  string `yaml:"branch"`
 	DestDir string `yaml:"destDir"`
