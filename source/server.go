@@ -4,13 +4,14 @@ import (
 	"fmt"
 	"net/http"
 	"time"
-
+	"strings" 
 	"open93athome-golang/source/Helper"
 	"open93athome-golang/source/logger"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	socketio "github.com/googollee/go-socket.io"
+	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 )
 
@@ -106,27 +107,29 @@ func SetupServer(ip string, port string, database *mongo.Client) {
 
 	// challenge 路由
 	r.GET("/openbmclapi-agent/challenge", func(c *gin.Context) {
-		var err error
-		clusters, err = GetClusters(database, "93athome", "cluster")
-		if err != nil {
-			logger.Error("Error getting clusters: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error getting clusters"})
-			return
-		}
-
 		clusterId := c.Query("clusterId")
 		if clusterId == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "clusterId is required"})
 			return
 		}
 
-		cluster, found := findClusterById(clusterId)
-		if !found {
+		// 将 clusterId 转换为 ObjectID
+		oid, err := bson.ObjectIDFromHex(clusterId)
+		if err != nil {
+			logger.Error("Invalid clusterId: %v", err)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid clusterId"})
+			return
+		}
+
+		// 从数据库中获取指定的 Cluster
+		cluster, err := GetClusterById(database, "93athome", "cluster", oid)
+		if err != nil {
+			logger.Error("Error getting cluster: %v", err)
 			c.JSON(http.StatusNotFound, gin.H{"error": "Cluster not found"})
 			return
 		}
 
-		if cluster.isBanned {
+		if cluster.IsBanned {
 			c.JSON(http.StatusForbidden, gin.H{"error": "Cluster is banned"})
 			return
 		}
@@ -150,6 +153,7 @@ func SetupServer(ip string, port string, database *mongo.Client) {
 		})
 	})
 
+	// token 路由
 	r.POST("/openbmclapi-agent/token", func(c *gin.Context) {
 		var req struct {
 			ClusterId string `json:"clusterId"`
@@ -170,13 +174,13 @@ func SetupServer(ip string, port string, database *mongo.Client) {
 
 		token, err := jwtHelper.VerifyToken(req.Challenge, "cluster-challenge")
 		if err != nil {
-			c.JSON(http.StatusForbidden, gin.H{"error": "Invalid challenge token1"})
+			c.JSON(http.StatusForbidden, gin.H{"error": "Invalid challenge token"})
 			return
 		}
 
 		claims, ok := token.Claims.(jwt.MapClaims)
 		if !ok || !token.Valid {
-			c.JSON(http.StatusForbidden, gin.H{"error": "Invalid challenge token2"})
+			c.JSON(http.StatusForbidden, gin.H{"error": "Invalid challenge token"})
 			return
 		}
 
@@ -186,8 +190,18 @@ func SetupServer(ip string, port string, database *mongo.Client) {
 			return
 		}
 
-		cluster, found := findClusterById(req.ClusterId)
-		if !found {
+		// 将 clusterId 转换为 ObjectID
+		oid, err := bson.ObjectIDFromHex(req.ClusterId)
+		if err != nil {
+			logger.Error("Invalid clusterId: %v", err)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid clusterId"})
+			return
+		}
+
+		// 从数据库中获取指定的 Cluster
+		cluster, err := GetClusterById(database, "93athome", "cluster", oid)
+		if err != nil {
+			logger.Error("Error getting cluster: %v", err)
 			c.JSON(http.StatusNotFound, gin.H{"error": "Cluster not found"})
 			return
 		}
@@ -211,6 +225,44 @@ func SetupServer(ip string, port string, database *mongo.Client) {
 		})
 	})
 
+	// files 路由
+	r.GET("/openbmclapi/files", func(c *gin.Context) {
+		if !verifyClusterRequest(c) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Unauthorized"})
+			return
+		}
+	
+		filesInfo, err := GetDocuments[FileInfo](database, "93athome", "files", bson.D{})
+		if err != nil {
+			logger.Error("Error getting files: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get files"})
+			return
+		}
+	
+		// 将 filesInfo 转换为 BMCLAPIObject
+		var helperFiles []Helper.BMCLAPIObject
+		for _, info := range filesInfo {
+		helperFiles = append(helperFiles, Helper.BMCLAPIObject{
+			Path:         "/" + strings.Replace(info.FileName, "\\", "/", -1),
+			Hash:         info.Hash,
+			Size:         info.Size,
+			LastModified: info.MTime.Time().UnixMilli(),
+		})
+		}
+
+		avroData, err := GetAvroBytes(helperFiles)
+		if err != nil {
+			logger.Error("Error generating Avro data: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate Avro data"})
+			return
+		}
+	
+		// 在这里处理已授权的请求
+		c.Header("Content-Type", "application/octet-stream")
+		c.Header("Content-Disposition", "attachment; filename=\"filelist\"")
+		c.Data(http.StatusOK, "application/octet-stream", avroData)
+	})
+
 	// 使用 Gin 处理 WebSocket 请求
 	r.GET("/socket.io/*any", gin.WrapH(server))
 	r.POST("/socket.io/*any", gin.WrapH(server))
@@ -228,13 +280,4 @@ func SetupServer(ip string, port string, database *mongo.Client) {
 	if err := r.Run(ip + ":" + port); err != nil {
 		logger.Fatal("Gin server failed to run: %v", err)
 	}
-}
-
-func findClusterById(clusterId string) (Cluster, bool) {
-	for _, cluster := range clusters {
-		if cluster.ClusterID.Hex() == clusterId {
-			return cluster, true
-		}
-	}
-	return Cluster{}, false
 }

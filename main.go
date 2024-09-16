@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -36,21 +37,41 @@ func main() {
 	}
 
 	// 初始化数据库
-	database, err := source.SetupDatabase(
-		config.Database.Address,
-		config.Database.Port,
+	uri := fmt.Sprintf("mongodb://%s:%s@%s:%d",
 		config.Database.Username,
 		config.Database.Password,
+		config.Database.Address,
+		config.Database.Port,
 	)
+	database, err := source.SetupDatabase(uri)
 	if err != nil {
 		logger.Error("Error setting up database: %v", err)
+		return
+	}
+
+	defer func() {
+		if err = database.Disconnect(context.TODO()); err != nil {
+			logger.Error("Error disconnecting from database: %v", err)
+		}
+	}()
+
+	// 确保需要的集合存在
+	err = source.EnsureCollection(database, "93athome", "cluster")
+	if err != nil {
+		logger.Error("Error ensuring clusters collection: %v", err)
+		return
+	}
+
+	err = source.EnsureCollection(database, "93athome", "files")
+	if err != nil {
+		logger.Error("Error ensuring files collection: %v", err)
 		return
 	}
 
 	// 输出同步源的数量和详细信息
 	logger.Info("Number of sync sources: %d", len(config.SyncSources))
 	for i, syncSource := range config.SyncSources {
-		logger.Info("Sync Source %d: URL=%s, Branch=%s, DestDir=%s", i+1, syncSource.URL, syncSource.Branch, syncSource.DestDir)
+		logger.Info("Sync Source %d [%s]: URL=%s, Branch=%s, DestDir=%s", i+1, syncSource.NAME, syncSource.URL, syncSource.Branch, syncSource.DestDir)
 		// Clone or pull the Git repo
 		err := source.CloneOrPullRepo(syncSource.URL, syncSource.Branch, syncSource.DestDir)
 		if err != nil {
@@ -66,21 +87,14 @@ func main() {
 		}
 	}
 
-	// 确保 CLUSTER 集合存在
-	err = source.EnsureClusterCollection(database, "93athome", "cluster")
+	// 获取 clusters 和 files 数据
+	clusters, err := source.GetDocuments[source.Cluster](database, "93athome", "cluster", nil)
 	if err != nil {
-		logger.Error("Error ensuring cluster collection: %v", err)
+		logger.Error("Error getting cluster: %v", err)
 		return
 	}
 
-	// 读取 cluster 集合中的所有数据
-	clusters, err := source.GetClusters(database, "93athome", "cluster")
-	if err != nil {
-		logger.Error("Error getting clusters: %v", err)
-		return
-	}
-
-	// 输出读取到的数据
+	// 输出 clusters 信息
 	for _, cluster := range clusters {
 		logger.Info("Cluster: %+v", cluster)
 	}

@@ -19,6 +19,7 @@ type DatabaseConfig struct {
 }
 
 type SyncSourceConfig struct {
+	NAME    string `yaml:name`
 	URL     string `yaml:"url"`
 	Branch  string `yaml:"branch"`
 	DestDir string `yaml:"destDir"`
@@ -44,11 +45,13 @@ func CreateDefaultConfig(filename string) error {
 		},
 		SyncSources: []SyncSourceConfig{
 			{
+				NAME:    "test1",
 				URL:     "https://github.com/example/repo1.git",
 				Branch:  "main",
 				DestDir: "repo1",
 			},
 			{
+				NAME:    "test2",
 				URL:     "https://github.com/example/repo2.git",
 				Branch:  "dev",
 				DestDir: "repo2",

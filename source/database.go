@@ -2,7 +2,6 @@ package source
 
 import (
 	"context"
-	"fmt"
 
 	"open93athome-golang/source/logger"
 
@@ -18,12 +17,11 @@ type Cluster struct {
 	Name          string        `bson:"name"`
 	EndPort       int           `bson:"endport"`
 	CreateAt      bson.DateTime `bson:"createAt"`
-	isBanned      bool          `bson:"isBanned"`
+	IsBanned      bool          `bson:"isBanned"`
 }
 
 // SetupDatabase 连接到 MongoDB
-func SetupDatabase(address string, port int, username, password string) (*mongo.Client, error) {
-	uri := fmt.Sprintf("mongodb://%s:%s@%s:%d", username, password, address, port)
+func SetupDatabase(uri string) (*mongo.Client, error) {
 	clientOptions := options.Client().ApplyURI(uri)
 
 	client, err := mongo.Connect(clientOptions)
@@ -31,6 +29,7 @@ func SetupDatabase(address string, port int, username, password string) (*mongo.
 		return nil, err
 	}
 
+	// 检查连接
 	err = client.Ping(context.TODO(), nil)
 	if err != nil {
 		return nil, err
@@ -40,8 +39,8 @@ func SetupDatabase(address string, port int, username, password string) (*mongo.
 	return client, nil
 }
 
-// EnsureClusterCollection 确保 CLUSTER 集合存在
-func EnsureClusterCollection(client *mongo.Client, dbName, collectionName string) error {
+// EnsureCollection 确保指定的集合存在
+func EnsureCollection(client *mongo.Client, dbName, collectionName string) error {
 	collectionNames, err := client.Database(dbName).ListCollectionNames(context.TODO(), bson.M{})
 	if err != nil {
 		return err
@@ -70,28 +69,48 @@ func EnsureClusterCollection(client *mongo.Client, dbName, collectionName string
 	return nil
 }
 
-// GetClusters 从 cluster 集合中读取所有文档
-func GetClusters(client *mongo.Client, dbName, collectionName string) ([]Cluster, error) {
+// GetDocuments 从指定的集合中读取文档并解码为指定的类型 爱来自ChatGpt
+func GetDocuments[T any](client *mongo.Client, dbName, collectionName string, filter interface{}) ([]T, error) {
 	collection := client.Database(dbName).Collection(collectionName)
-	cursor, err := collection.Find(context.TODO(), bson.M{})
+	findOptions := options.Find()
+
+	// 如果过滤器为 nil，则将其设置为空文档
+	if filter == nil {
+		filter = bson.D{}
+	}
+
+	cursor, err := collection.Find(context.TODO(), filter, findOptions)
 	if err != nil {
 		return nil, err
 	}
 	defer cursor.Close(context.TODO())
 
-	var clusters []Cluster
+	var results []T
 	for cursor.Next(context.TODO()) {
-		var cluster Cluster
-		err := cursor.Decode(&cluster)
+		var elem T
+		err := cursor.Decode(&elem)
 		if err != nil {
 			return nil, err
 		}
-		clusters = append(clusters, cluster)
+		results = append(results, elem)
 	}
 
 	if err := cursor.Err(); err != nil {
 		return nil, err
 	}
 
-	return clusters, nil
+	return results, nil
+}
+
+// 获取节点
+func GetClusterById(client *mongo.Client, dbName, collectionName string, id bson.ObjectID) (*Cluster, error) {
+	collection := client.Database(dbName).Collection(collectionName)
+
+	var cluster Cluster
+	err := collection.FindOne(context.TODO(), bson.M{"_id": id}).Decode(&cluster)
+	if err != nil {
+		return nil, err
+	}
+
+	return &cluster, nil
 }

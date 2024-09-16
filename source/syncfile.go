@@ -22,9 +22,11 @@ import (
 
 // FileInfo 表示 files 集合中的文档结构
 type FileInfo struct {
-	FileName string        `bson:"fileName"`
-	Hash     string        `bson:"hash"`
-	MTime    bson.DateTime `bson:"mtime"`
+	FileName   string        `bson:"fileName"`
+	Hash       string        `bson:"hash"`
+	Size       int64         `bson:"size"` // 修改类型为 int64，并修正 bson 标签
+	MTime      bson.DateTime `bson:"mtime"`
+	SyncSource string        `bson:"syncSource"`
 }
 
 func CloneOrPullRepo(repoURL, branch, destDir string) error {
@@ -96,25 +98,36 @@ func SyncFiles(client *mongo.Client, syncSource SyncSourceConfig) error {
 		wg.Add(1)
 		go func(path string) {
 			defer wg.Done()
+
+			// 获取文件信息，包括大小
+			fileInfoStat, err := os.Stat(path)
+			if err != nil {
+				logger.Error("Error getting file info for %s: %v", path, err)
+				return
+			}
+			fileSize := fileInfoStat.Size() // 获取文件大小
+
 			hash, err := ComputeFileHash(path)
 			if err != nil {
 				logger.Error("Error computing hash for file %s: %v", path, err)
 				return
 			}
 
-			// 检查文件是否已存在且哈希值相同
+			// 检查文件是否已存在且哈希值和大小相同
 			var existingFile FileInfo
 			err = collection.FindOne(context.TODO(), bson.M{"fileName": path}).Decode(&existingFile)
-			if err == nil && existingFile.Hash == hash {
-				// 文件已存在且哈希值相同，跳过
+			if err == nil && existingFile.Hash == hash && existingFile.Size == fileSize {
+				// 文件已存在且哈希值和大小相同，跳过
 				bar.Add(1)
 				return
 			}
 
 			fileInfo := FileInfo{
-				FileName: path,
-				Hash:     hash,
-				MTime:    bson.DateTime(time.Now().UnixMilli()), // 设置同步时间为当前时间
+				FileName:   path,
+				Hash:       hash,
+				Size:       fileSize,                              // 将文件大小存储到数据库
+				MTime:      bson.DateTime(time.Now().UnixMilli()), // 设置同步时间为当前时间
+				SyncSource: syncSource.NAME,
 			}
 
 			_, err = collection.UpdateOne(
