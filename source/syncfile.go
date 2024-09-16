@@ -22,12 +22,14 @@ import (
 
 // FileInfo 表示 files 集合中的文档结构
 type FileInfo struct {
-	FileName   string        `bson:"fileName"`
-	Hash       string        `bson:"hash"`
-	Size       int64         `bson:"size"` // 修改类型为 int64，并修正 bson 标签
-	MTime      bson.DateTime `bson:"mtime"`
-	SyncSource string        `bson:"syncSource"`
+    FileName   string        `bson:"fileName"`
+    LocalDir   string        `bson:"localDir"`
+    Hash       string        `bson:"hash"`
+    Size       int64         `bson:"size"`
+    MTime      bson.DateTime `bson:"mtime"`
+    SyncSource string        `bson:"syncSource"`
 }
+
 
 func CloneOrPullRepo(repoURL, branch, destDir string) error {
 	if _, err := os.Stat(destDir); os.IsNotExist(err) {
@@ -63,91 +65,87 @@ func ComputeFileHash(filePath string) (string, error) {
 
 // SyncFiles 同步文件并将文件信息写入 MongoDB
 func SyncFiles(client *mongo.Client, syncSource SyncSourceConfig) error {
-	collection := client.Database("93athome").Collection("files")
-	var wg sync.WaitGroup
+    collection := client.Database("93athome").Collection("files")
+    var wg sync.WaitGroup
 
-	// 收集文件路径
-	var filePaths []string
-	err := filepath.Walk(syncSource.DestDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		// 排除 .git 文件夹
-		if info.IsDir() && strings.Contains(path, ".git") {
-			return filepath.SkipDir
-		}
-		if !info.IsDir() {
-			filePaths = append(filePaths, path)
-		}
-		return nil
-	})
-	if err != nil {
-		return err
-	}
+    var filePaths []string
+    fullPathMap := make(map[string]string)
+    err := filepath.Walk(syncSource.DestDir, func(path string, info os.FileInfo, err error) error {
+        if err != nil {
+            return err
+        }
+        if info.IsDir() && strings.Contains(path, ".git") {
+            return filepath.SkipDir
+        }
+        if !info.IsDir() {
+            relativePath := strings.TrimPrefix(path, syncSource.DestDir)
+            relativePath = strings.TrimPrefix(relativePath, string(os.PathSeparator))
+            filePaths = append(filePaths, relativePath)
+            fullPathMap[relativePath] = path
+        }
+        return nil
+    })
+    if err != nil {
+        return err
+    }
 
-	// 设置进度条
-	bar := progressbar.NewOptions(len(filePaths),
-		progressbar.OptionSetWidth(15),
-		progressbar.OptionSetDescription("Syncing files"),
-		progressbar.OptionShowCount(),
-		progressbar.OptionShowBytes(true),
-	)
+    bar := progressbar.NewOptions(len(filePaths),
+        progressbar.OptionSetWidth(15),
+        progressbar.OptionSetDescription("Syncing files"),
+        progressbar.OptionShowCount(),
+        progressbar.OptionShowBytes(true),
+    )
 
-	// 使用 goroutines 并行计算文件哈希并同步文件信息
-	for _, filePath := range filePaths {
-		wg.Add(1)
-		go func(path string) {
-			defer wg.Done()
+    for relativePath, fullPath := range fullPathMap {
+        wg.Add(1)
+        go func(path, fullPath string) {
+            defer wg.Done()
+            fileInfoStat, err := os.Stat(fullPath)
+            if err != nil {
+                logger.Error("Error getting file info for %s: %v", fullPath, err)
+                return
+            }
+            fileSize := fileInfoStat.Size()
 
-			// 获取文件信息，包括大小
-			fileInfoStat, err := os.Stat(path)
-			if err != nil {
-				logger.Error("Error getting file info for %s: %v", path, err)
-				return
-			}
-			fileSize := fileInfoStat.Size() // 获取文件大小
+            hash, err := ComputeFileHash(fullPath)
+            if err != nil {
+                logger.Error("Error computing hash for file %s: %v", fullPath, err)
+                return
+            }
 
-			hash, err := ComputeFileHash(path)
-			if err != nil {
-				logger.Error("Error computing hash for file %s: %v", path, err)
-				return
-			}
+            var existingFile FileInfo
+            err = collection.FindOne(context.TODO(), bson.M{"fileName": path}).Decode(&existingFile)
+            if err == nil && existingFile.Hash == hash && existingFile.Size == fileSize {
+                bar.Add(1)
+                return
+            }
 
-			// 检查文件是否已存在且哈希值和大小相同
-			var existingFile FileInfo
-			err = collection.FindOne(context.TODO(), bson.M{"fileName": path}).Decode(&existingFile)
-			if err == nil && existingFile.Hash == hash && existingFile.Size == fileSize {
-				// 文件已存在且哈希值和大小相同，跳过
-				bar.Add(1)
-				return
-			}
+            fileInfo := FileInfo{
+                FileName:   path,
+                LocalDir:   fullPath,
+                Hash:       hash,
+                Size:       fileSize,
+                MTime:      bson.DateTime(time.Now().UnixMilli()),
+                SyncSource: syncSource.NAME,
+            }
 
-			fileInfo := FileInfo{
-				FileName:   path,
-				Hash:       hash,
-				Size:       fileSize,                              // 将文件大小存储到数据库
-				MTime:      bson.DateTime(time.Now().UnixMilli()), // 设置同步时间为当前时间
-				SyncSource: syncSource.NAME,
-			}
+            _, err = collection.UpdateOne(
+                context.TODO(),
+                bson.M{"fileName": path},
+                bson.M{"$set": fileInfo},
+                options.Update().SetUpsert(true),
+            )
+            if err != nil {
+                logger.Error("Error syncing file %s: %v", fullPath, err)
+                return
+            }
 
-			_, err = collection.UpdateOne(
-				context.TODO(),
-				bson.M{"fileName": path},
-				bson.M{"$set": fileInfo},
-				options.Update().SetUpsert(true),
-			)
-			if err != nil {
-				logger.Error("Error syncing file %s: %v", path, err)
-				return
-			}
+            bar.Add(1)
+        }(relativePath, fullPath)
+    }
 
-			bar.Add(1) // 更新进度条
-		}(filePath)
-	}
+    wg.Wait()
+    bar.Finish()
 
-	// 等待所有 goroutines 完成
-	wg.Wait()
-	bar.Finish()
-
-	return nil
+    return nil
 }

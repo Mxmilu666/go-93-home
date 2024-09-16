@@ -114,3 +114,17 @@ func GetClusterById(client *mongo.Client, dbName, collectionName string, id bson
 
 	return &cluster, nil
 }
+
+// 查询文件
+func GetFileFromDB(client *mongo.Client, dbName, collectionName, syncSource, fileName string) (*FileInfo, error) {
+	collection := client.Database(dbName).Collection(collectionName)
+
+	var fileRecord FileInfo
+	filter := bson.M{"syncSource": syncSource, "fileName": fileName}
+	err := collection.FindOne(context.TODO(), filter).Decode(&fileRecord)
+	if err != nil {
+		return nil, err
+	}
+
+	return &fileRecord, nil
+}
