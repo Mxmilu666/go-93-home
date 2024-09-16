@@ -236,9 +236,12 @@ func SetupServer(ip string, port string, database *mongo.Client) {
 				"ttl":   1000 * 60 * 60 * 24, // 24小时
 			})
 		})
+	}
 
+	openbmclapi := r.Group("/openbmclapi")
+	{
 		// configuration 路由
-		openbmclapiAgent.GET("/configuration", func(c *gin.Context) {
+		openbmclapi.GET("/configuration", func(c *gin.Context) {
 			if !verifyClusterRequest(c) {
 				c.AbortWithStatus(http.StatusForbidden)
 				return
@@ -251,44 +254,45 @@ func SetupServer(ip string, port string, database *mongo.Client) {
 			}
 			c.JSON(http.StatusOK, response)
 		})
+
+		// files 路由
+		openbmclapi.GET("/files", func(c *gin.Context) {
+			if !verifyClusterRequest(c) {
+				c.JSON(http.StatusForbidden, gin.H{"error": "Unauthorized"})
+				return
+			}
+
+			filesInfo, err := GetDocuments[FileInfo](database, "93athome", "files", bson.D{})
+			if err != nil {
+				logger.Error("Error getting files: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get files"})
+				return
+			}
+
+			// 将 filesInfo 转换为 BMCLAPIObject
+			var helperFiles []Helper.BMCLAPIObject
+			for _, info := range filesInfo {
+				helperFiles = append(helperFiles, Helper.BMCLAPIObject{
+					Path:         "/files/" + info.SyncSource + "/" + strings.Replace(info.FileName, "\\", "/", -1),
+					Hash:         info.Hash,
+					Size:         info.Size,
+					LastModified: info.MTime.Time().UnixMilli(),
+				})
+			}
+
+			avroData, err := GetAvroBytes(helperFiles)
+			if err != nil {
+				logger.Error("Error generating Avro data: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate Avro data"})
+				return
+			}
+
+			// 在这里处理已授权的请求
+			c.Header("Content-Type", "application/octet-stream")
+			c.Header("Content-Disposition", "attachment; filename=\"filelist\"")
+			c.Data(http.StatusOK, "application/octet-stream", avroData)
+		})
 	}
-	// files 路由
-	r.GET("/openbmclapi/files", func(c *gin.Context) {
-		if !verifyClusterRequest(c) {
-			c.JSON(http.StatusForbidden, gin.H{"error": "Unauthorized"})
-			return
-		}
-
-		filesInfo, err := GetDocuments[FileInfo](database, "93athome", "files", bson.D{})
-		if err != nil {
-			logger.Error("Error getting files: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get files"})
-			return
-		}
-
-		// 将 filesInfo 转换为 BMCLAPIObject
-		var helperFiles []Helper.BMCLAPIObject
-		for _, info := range filesInfo {
-			helperFiles = append(helperFiles, Helper.BMCLAPIObject{
-				Path:         "/files/" + info.SyncSource + "/" + strings.Replace(info.FileName, "\\", "/", -1),
-				Hash:         info.Hash,
-				Size:         info.Size,
-				LastModified: info.MTime.Time().UnixMilli(),
-			})
-		}
-
-		avroData, err := GetAvroBytes(helperFiles)
-		if err != nil {
-			logger.Error("Error generating Avro data: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate Avro data"})
-			return
-		}
-
-		// 在这里处理已授权的请求
-		c.Header("Content-Type", "application/octet-stream")
-		c.Header("Content-Disposition", "attachment; filename=\"filelist\"")
-		c.Data(http.StatusOK, "application/octet-stream", avroData)
-	})
 
 	// 下载文件
 	r.GET("/files/*filepath", func(c *gin.Context) {
