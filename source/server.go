@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 	"strings" 
+	"net/url"
 	"open93athome-golang/source/Helper"
 	"open93athome-golang/source/logger"
 
@@ -39,8 +40,14 @@ func filterLogs() gin.HandlerFunc {
 		start := time.Now()
 
 		// 获取完整请求的 URL
-		fullURL := c.Request.URL.String()
+		fullURL, err:= url.QueryUnescape(c.Request.URL.String())
+		if err != nil {
+			logger.Error("Error decoding URL:", err)
+			return
+		}
 
+		fullURL = strings.ReplaceAll(fullURL, "%", "%%")
+		
 		c.Next()
 
 		latency := time.Since(start)
