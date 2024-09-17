@@ -309,7 +309,6 @@ func SetupServer(ip string, port string, database *mongo.Client) {
 		// 获取 syncSource 和 fileName
 		syncSource := pathSegments[0]
 		fileName := strings.Join(pathSegments[1:], "/")
-		fileName = strings.ReplaceAll(fileName, "/", "\\")
 
 		// 从数据库查询文档
 		fileRecord, err := GetFileFromDB(database, "93athome", "files", syncSource, fileName)
