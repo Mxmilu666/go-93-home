@@ -78,7 +78,8 @@ func SyncFiles(client *mongo.Client, syncSource SyncSourceConfig) error {
 		}
 		if !info.IsDir() {
 			relativePath := strings.TrimPrefix(path, syncSource.DestDir)
-			relativePath = strings.Replace(relativePath, "\\", "//", -1)
+			relativePath = strings.TrimPrefix(relativePath, "\\")
+			relativePath = strings.Replace(relativePath, "\\", "/", -1)
 			relativePath = strings.TrimPrefix(relativePath, string(os.PathSeparator))
 			filePaths = append(filePaths, relativePath)
 			fullPathMap[relativePath] = path

@@ -82,7 +82,35 @@ func SetupServer(ip string, port string, database *mongo.Client) {
 
 	// 定义 Socket.IO 事件
 	server.OnConnect("/", func(s socketio.Conn) error {
-		logger.Info("Connected: %s", s.ID())
+		logger.Info("Connected: %s", s.ID()) // 使用 Infof 进行格式化
+
+		query, _ := url.ParseQuery(s.URL().RawQuery)
+		token, ok := query["auth"]
+
+		// 检查 token 是否存在并且长度是否大于0
+		if !ok || len(token) == 0 || token[0] == "" {
+			logger.Error("No token provided")
+			s.Close()
+			return nil
+		}
+
+		// 获取 JWT helper 实例
+		jwtHelper, err := Helper.GetInstance()
+		if err != nil {
+			logger.Error("Error initializing JWT helper")
+			s.Close()
+			return nil
+		}
+
+		// 验证 token
+		claims, err := jwtHelper.VerifyToken(token[0], "cluster")
+		if err != nil {
+			logger.Error("Token verification failed:", err)
+			s.Close()
+			return nil
+		}
+
+		logger.Info("Claims: %v", claims.Claims.(jwt.MapClaims))
 		s.SetContext("")
 		return nil
 	})
