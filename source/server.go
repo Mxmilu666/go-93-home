@@ -13,16 +13,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/zishang520/socket.io/v2/socket"
+
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
-	socketio "github.com/googollee/go-socket.io"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 )
 
 var (
-	server   *socketio.Server // 将 server 设为全局变量
-	r        *gin.Engine      // 将 gin 的路由器也设为全局变量
+	r        *gin.Engine // 将 gin 的路由器也设为全局变量
 	clusters []Cluster
 )
 
@@ -77,55 +77,62 @@ func filterLogs() gin.HandlerFunc {
 func SetupServer(ip string, port string, database *mongo.Client) {
 	gin.SetMode(gin.ReleaseMode)
 
-	// 创建新的 Socket.IO 服务器
-	server = socketio.NewServer(nil)
+	server := socket.NewServer(nil, nil)
 
-	// 定义 Socket.IO 事件
-	server.OnConnect("/", func(s socketio.Conn) error {
-		logger.Info("Connected: %s", s.ID()) // 使用 Infof 进行格式化
+	server.On("connection", func(clients ...any) {
+		client := clients[0].(*socket.Socket)
 
-		query, _ := url.ParseQuery(s.URL().RawQuery)
-		token, ok := query["auth"]
+		auth := client.Handshake().Auth
 
-		// 检查 token 是否存在并且长度是否大于0
-		if !ok || len(token) == 0 || token[0] == "" {
-			logger.Error("No token provided")
-			s.Close()
-			return nil
+		token, ok := auth.(map[string]interface{})
+		if !ok {
+			logger.Info("Invalid token type")
+			client.Disconnect(true)
+		}
+
+		tokenStr, ok := token["token"].(string)
+		if !ok || tokenStr == "" {
+			logger.Info("Invalid or missing token format")
+			client.Disconnect(true)
 		}
 
 		// 获取 JWT helper 实例
 		jwtHelper, err := Helper.GetInstance()
 		if err != nil {
 			logger.Error("Error initializing JWT helper")
-			s.Close()
-			return nil
+			client.Disconnect(true)
+		}
+
+		if len(strings.Split(tokenStr, ".")) != 3 {
+			logger.Error("Malformed JWT token")
+			client.Disconnect(true)
 		}
 
 		// 验证 token
-		claims, err := jwtHelper.VerifyToken(token[0], "cluster")
+		claims, err := jwtHelper.VerifyToken(tokenStr, "cluster")
 		if err != nil {
 			logger.Error("Token verification failed:", err)
-			s.Close()
-			return nil
+			client.Disconnect(true)
+		}
+
+		if claims == nil {
+			logger.Error("Claims are nil")
+			client.Disconnect(true)
+			return
 		}
 
 		logger.Info("Claims: %v", claims.Claims.(jwt.MapClaims))
-		s.SetContext("")
-		return nil
-	})
 
-	server.OnEvent("/", "message", func(s socketio.Conn, msg string) {
-		logger.Info("Received message: %s", msg)
-		s.Emit("reply", "Received: "+msg)
-	})
+		client.On("event", func(datas ...any) {
+			logger.Info("%v", datas...)
+		})
 
-	server.OnError("/", func(s socketio.Conn, e error) {
-		logger.Error("Socket.IO error: %v", e)
-	})
+		client.On("enable", func(datas ...any) {
+			logger.Info("%v", datas...)
+		})
 
-	server.OnDisconnect("/", func(s socketio.Conn, reason string) {
-		logger.Info("Disconnected: %s", reason)
+		client.On("disconnect", func(...any) {
+		})
 	})
 
 	// 创建路由
@@ -200,9 +207,31 @@ func SetupServer(ip string, port string, database *mongo.Client) {
 				Signature string `json:"signature"`
 				Challenge string `json:"challenge"`
 			}
-
-			if err := c.BindJSON(&req); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+			//我讨厌 form
+			contentType := c.Request.Header.Get("Content-Type")
+			if strings.HasPrefix(contentType, "application/json") {
+				if err := c.ShouldBindJSON(&req); err != nil {
+					c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON request body"})
+					return
+				}
+			} else if strings.HasPrefix(contentType, "application/x-www-form-urlencoded") {
+				if err := c.Request.ParseForm(); err != nil {
+					c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to parse form data"})
+					return
+				}
+				req.ClusterId = c.PostForm("clusterId")
+				req.Signature = c.PostForm("signature")
+				req.Challenge = c.PostForm("challenge")
+			} else if strings.HasPrefix(contentType, "multipart/form-data") {
+				if err := c.Request.ParseForm(); err != nil {
+					c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to parse form data"})
+					return
+				}
+				req.ClusterId = c.PostForm("clusterId")
+				req.Signature = c.PostForm("signature")
+				req.Challenge = c.PostForm("challenge")
+			} else {
+				c.JSON(http.StatusUnsupportedMediaType, gin.H{"error": "Unsupported Content-Type"})
 				return
 			}
 
@@ -374,21 +403,13 @@ func SetupServer(ip string, port string, database *mongo.Client) {
 		c.Data(http.StatusOK, mimeType, fileContent)
 	})
 
-	// 使用 Gin 处理 WebSocket 请求
-	r.GET("/socket.io/*any", gin.WrapH(server))
-	r.POST("/socket.io/*any", gin.WrapH(server))
-
-	// 启动 Socket.IO 服务器
-	go func() {
-		if err := server.Serve(); err != nil {
-			logger.Fatal("Socket.IO server failed to start: %v", err)
-		}
-	}()
-	defer server.Close() // 在退出时关闭 Socket.IO 服务器
+	// 使用 socketio 处理 WebSocket 请求
+	r.GET("/socket.io/*any", gin.WrapH(server.ServeHandler(nil)))
+	r.POST("/socket.io/*any", gin.WrapH(server.ServeHandler(nil)))
 
 	logger.Info("Server is running at %s:%s", ip, port)
 	// 启动 HTTP 服务器
 	if err := r.Run(ip + ":" + port); err != nil {
-		logger.Fatal("Gin server failed to run: %v", err)
+		logger.Fatal("Server failed to run: %v", err)
 	}
 }
