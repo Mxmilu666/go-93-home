@@ -190,7 +190,7 @@ func SetupServer(ip string, port string, database *mongo.Client) {
 							logger.Info("cluster %v successfully enabled", oid)
 						} else {
 							ack := datas[len(datas)-1].(func([]any, error))
-							ack([]any{[]any{map[string]string{"message": fmt.Sprintf("服务器查活失败，请检查端口是否可用(%v)：Error: 未能成功测量带宽", id["data"].(map[string]interface{})["clusterId"].(string))}}}, nil)
+							ack([]any{[]any{map[string]string{"message": fmt.Sprintf("服务器查活失败，请检查端口是否可用(%v)：Error: %v", id["data"].(map[string]interface{})["clusterId"].(string), err)}}}, nil)
 						}
 					}
 				}
