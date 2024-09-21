@@ -174,11 +174,13 @@ func SetupServer(ip string, port string, database *mongo.Client) {
 						}
 
 						// 尝试巡检五次，每次间隔 0.5 秒
-						success := false
+						success := true
 						for i := 0; i < 5; i++ {
 							err := CheckFileHash(database, oid)
-							if err == nil {
-								success = true
+							if err != nil {
+								ack := datas[len(datas)-1].(func([]any, error))
+								ack([]any{[]any{map[string]string{"message": fmt.Sprintf("服务器查活失败，请检查端口是否可用(%v)：Error: %v", id["data"].(map[string]interface{})["clusterId"].(string), err)}}}, nil)
+								success = false
 								break
 							}
 							time.Sleep(200 * time.Millisecond)
@@ -188,9 +190,6 @@ func SetupServer(ip string, port string, database *mongo.Client) {
 							ack := datas[len(datas)-1].(func([]any, error))
 							ack([]any{[]any{nil, true}}, nil)
 							logger.Info("cluster %v successfully enabled", oid)
-						} else {
-							ack := datas[len(datas)-1].(func([]any, error))
-							ack([]any{[]any{map[string]string{"message": fmt.Sprintf("服务器查活失败，请检查端口是否可用(%v)：Error: %v", id["data"].(map[string]interface{})["clusterId"].(string), err)}}}, nil)
 						}
 					}
 				}
