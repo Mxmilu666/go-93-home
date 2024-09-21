@@ -2,22 +2,30 @@ package source
 
 import (
 	"crypto/hmac"
+	"crypto/sha1"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
+	"fmt"
+	"io/ioutil"
+	"net/http"
 	"open93athome-golang/source/Helper"
 	"strings"
+	"time"
 
 	"github.com/klauspost/compress/zstd"
-	
+	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo"
+
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 )
 
 type File struct {
-    Path  string `avro:"path"`
-    Hash  string `avro:"hash"`
-    Size  int64  `avro:"size"`
-    Mtime int64  `avro:"mtime"`
+	Path  string `avro:"path"`
+	Hash  string `avro:"hash"`
+	Size  int64  `avro:"size"`
+	Mtime int64  `avro:"mtime"`
 }
 
 // computeSignature 计算并验证签名
@@ -79,18 +87,107 @@ func verifyClusterRequest(c *gin.Context) bool {
 func GetAvroBytes(files []Helper.BMCLAPIObject) ([]byte, error) {
 	data, err := Helper.ComputeAvroBytes(files)
 	if err != nil {
-        return nil, err
-    }
+		return nil, err
+	}
 
-    // 使用 zstd 压缩 Avro 数据
-    encoder, err := zstd.NewWriter(nil)
-    if err != nil {
-        return nil, err
-    }
-    compressedData := encoder.EncodeAll(data, nil)
+	// 使用 zstd 压缩 Avro 数据
+	encoder, err := zstd.NewWriter(nil)
+	if err != nil {
+		return nil, err
+	}
+	compressedData := encoder.EncodeAll(data, nil)
 
-    return compressedData, nil
+	return compressedData, nil
 }
 
+// toUrlSafeBase64String 将字节数组转换为 URL 安全的 Base64 字符串
+func toUrlSafeBase64String(data []byte) string {
+	// 使用标准的 Base64 编码
+	s := base64.StdEncoding.EncodeToString(data)
+	// 替换掉不安全的 URL 字符
+	s = strings.ReplaceAll(s, "+", "-")
+	s = strings.ReplaceAll(s, "/", "_")
+	// 去掉尾部的 =
+	s = strings.TrimRight(s, "=")
+	return s
+}
 
+// getSign 生成签名
+func getSign(path string, secret string) (string, error) {
+	timestamp := time.Now().UnixMilli() + 5*60*1000
+	e := fmt.Sprintf("%v", strings.ToLower(fmt.Sprintf("%x", timestamp)))
+	h := sha1.New()
 
+	// 将 secret + path + e 进行哈希计算
+	_, err := h.Write([]byte(secret + path + e))
+	if err != nil {
+		return "", err
+	}
+	signBytes := h.Sum(nil)
+
+	// 将哈希值转换为 URL 安全的 Base64 字符串
+	sign := toUrlSafeBase64String(signBytes)
+
+	// 返回签名字符串
+	return fmt.Sprintf("s=%s&e=%s", sign, e), nil
+}
+
+// 随机获取节点文件并检查hash
+func CheckFileHash(database *mongo.Client, oid bson.ObjectID) error {
+	//获取随机文件
+	file, err := GetRandomFile(database, "93athome", "files")
+	if err != nil {
+		return fmt.Errorf("error getting random file: %v", err)
+	}
+
+	cluster, err := GetClusterById(database, "93athome", "cluster", oid)
+	if err != nil {
+		return fmt.Errorf("error getting cluster: %v", err)
+	}
+
+	signature, err := getSign(file.Hash, cluster.ClusterSecret)
+	if err != nil {
+		return fmt.Errorf("error generating signature: %v", err)
+	}
+
+	// 构建 URL，请求检查文件的 hash
+	url := fmt.Sprintf("%s/download/%s?%s", cluster.EndPoint, file.Hash, signature)
+
+	// 创建 HTTP 客户端
+	client := &http.Client{Timeout: 30 * time.Second}
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return err
+	}
+
+	// 设个 ua，别把主控当机器人拦了
+	req.Header.Set("User-Agent", "93athome-ctrl")
+
+	// 发起请求
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to check hash, status code: %d", resp.StatusCode)
+	}
+
+	// 读取响应体中的文件内容
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+
+	// 计算响应内容的 SHA1 hash
+	downloadedHash := sha1.Sum(body)
+	downloadedHashString := fmt.Sprintf("%x", downloadedHash)
+
+	// 将下载的文件 hash 与数据库中的 hash 比较
+	if downloadedHashString != file.Hash {
+		return fmt.Errorf("hash mismatch: expected %s, got %s", file.Hash, downloadedHashString)
+	}
+
+	return nil
+}

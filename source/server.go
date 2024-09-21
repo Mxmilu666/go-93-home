@@ -22,8 +22,9 @@ import (
 )
 
 var (
-	r        *gin.Engine // 将 gin 的路由器也设为全局变量
-	clusters []Cluster
+	r                   *gin.Engine // 将 gin 的路由器也设为全局变量
+	clusters            []Cluster
+	sessionToClusterMap = make(map[string]bson.ObjectID)
 )
 
 // corsMiddleware 添加 CORS 头部
@@ -115,23 +116,94 @@ func SetupServer(ip string, port string, database *mongo.Client) {
 			client.Disconnect(true)
 		}
 
-		if claims == nil {
-			logger.Error("Claims are nil")
+		id, ok := claims.Claims.(jwt.MapClaims)
+		if !ok || !claims.Valid {
+			logger.Error("Invalid jwt")
 			client.Disconnect(true)
-			return
 		}
 
-		logger.Info("Claims: %v", claims.Claims.(jwt.MapClaims))
+		oid, err := bson.ObjectIDFromHex(id["data"].(map[string]interface{})["clusterId"].(string))
+		if err != nil {
+			logger.Error("Invalid clusterId: %v", err)
+			client.Disconnect(true)
+		}
+
+		sessionToClusterMap[string(client.Id())] = oid
 
 		client.On("event", func(datas ...any) {
 			logger.Info("%v", datas...)
 		})
 
+		// enable 部分
 		client.On("enable", func(datas ...any) {
-			logger.Info("%v", datas...)
+			logger.Info("cluster %v requests enable", oid)
+			for _, data := range datas {
+				if m, ok := data.(map[string]interface{}); ok {
+					var endpoint string
+
+					if host, exists := m["host"]; exists {
+						if port, exists := m["port"]; exists {
+							endpoint = fmt.Sprintf("http://%v:%v", host, port)
+						} else {
+							ack := datas[len(datas)-1].(func([]any, error))
+							ack([]any{[]any{map[string]string{"message": "Port not found"}}}, nil)
+							client.Disconnect(true)
+						}
+					} else {
+						host := client.Handshake().Address
+						colonIndex := strings.LastIndex(host, ":")
+						host = host[:colonIndex]
+						if port, exists := m["port"]; exists {
+							endpoint = fmt.Sprintf("http://%v:%v", host, port)
+						} else {
+							ack := datas[len(datas)-1].(func([]any, error))
+							ack([]any{[]any{map[string]string{"message": "Port not found"}}}, nil)
+							client.Disconnect(true)
+						}
+					}
+					if endpoint != "" {
+						setcluster := bson.M{
+							"endPoint": endpoint,
+							"flavor":   m["flavor"],
+							"byoc":     m["byoc"],
+						}
+
+						err = UpdateClusterFieldsById(database, "93athome", "cluster", oid, setcluster)
+						if err != nil {
+							logger.Error("%v", err)
+						}
+
+						// 尝试巡检五次，每次间隔 0.5 秒
+						success := false
+						for i := 0; i < 5; i++ {
+							err := CheckFileHash(database, oid)
+							if err == nil {
+								success = true
+								break
+							}
+							time.Sleep(200 * time.Millisecond)
+						}
+
+						if success {
+							ack := datas[len(datas)-1].(func([]any, error))
+							ack([]any{[]any{nil, true}}, nil)
+							logger.Info("cluster %v successfully enabled", oid)
+						} else {
+							ack := datas[len(datas)-1].(func([]any, error))
+							ack([]any{[]any{map[string]string{"message": fmt.Sprintf("服务器查活失败，请检查端口是否可用(%v)：Error: 未能成功测量带宽", id["data"].(map[string]interface{})["clusterId"].(string))}}}, nil)
+						}
+					}
+				}
+			}
+		})
+
+		// keepalive 部分
+		client.On("keepalive", func(datas ...any) {
+			logger.Info("%v", datas)
 		})
 
 		client.On("disconnect", func(...any) {
+			delete(sessionToClusterMap, string(client.Id()))
 		})
 	})
 

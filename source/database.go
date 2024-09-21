@@ -2,6 +2,7 @@ package source
 
 import (
 	"context"
+	"fmt"
 
 	"open93athome-golang/source/logger"
 
@@ -15,9 +16,11 @@ type Cluster struct {
 	ClusterID     bson.ObjectID `bson:"_id"`
 	ClusterSecret string        `bson:"clusterSecret"`
 	Name          string        `bson:"name"`
-	EndPort       int           `bson:"endport"`
+	EndPoint      string        `bson:"endpoint"`
 	CreateAt      bson.DateTime `bson:"createAt"`
 	IsBanned      bool          `bson:"isBanned"`
+	Byoc          bool          `bson:"byoc"`
+	Flavor        any           `bson:"flavor"`
 }
 
 // SetupDatabase 连接到 MongoDB
@@ -127,4 +130,49 @@ func GetFileFromDB(client *mongo.Client, dbName, collectionName, syncSource, fil
 	}
 
 	return &fileRecord, nil
+}
+
+// 更新节点信息
+func UpdateClusterFieldsById(client *mongo.Client, dbName, collectionName string, id bson.ObjectID, updates bson.M) error {
+	collection := client.Database(dbName).Collection(collectionName)
+
+	// 使用 $set 操作符更新文档
+	update := bson.M{
+		"$set": updates,
+	}
+
+	// 根据 _id 更新文档
+	_, err := collection.UpdateOne(context.TODO(), bson.M{"_id": id}, update)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// 从数据库中随机获取一个文件
+func GetRandomFile(client *mongo.Client, dbName, collectionName string) (*FileInfo, error) {
+	collection := client.Database(dbName).Collection(collectionName)
+
+	// 使用 $sample 获取随机文件
+	pipeline := mongo.Pipeline{
+		{{Key: "$sample", Value: bson.D{{Key: "size", Value: 1}}}},
+	}
+
+	cursor, err := collection.Aggregate(context.TODO(), pipeline)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(context.TODO())
+
+	if cursor.Next(context.TODO()) {
+		var file FileInfo
+		err := cursor.Decode(&file)
+		if err != nil {
+			return nil, err
+		}
+		return &file, nil
+	}
+
+	return nil, fmt.Errorf("no file found")
 }
