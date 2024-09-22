@@ -210,20 +210,45 @@ func SetupServer(ip string, port string, database *mongo.Client) {
 
 		// keepalive 部分
 		client.On("keep-alive", func(datas ...any) {
-			// TODO: keepalive
-			logger.Info("%v", datas)
-
 			session := string(client.Id())
+			ack := datas[len(datas)-1].(func([]any, error))
 			clusterID, exists := sessionToClusterMap[session]
 			if exists {
-				logger.Info("Found ClusterID: %s for session: %s\n", clusterID.Hex(), session)
+				// 检查 datas 的第一个元素并确保是 map
+				if len(datas) > 0 {
+					if dataMap, ok := datas[0].(map[string]interface{}); ok {
+						bytesVal, ok := dataMap["bytes"].(int64)
+						if !ok {
+							logger.Error("Error: Invalid data type for 'bytes'")
+							ack([]any{[]any{nil, false}}, nil)
+							return
+						}
+
+						hitsVal, ok := dataMap["hits"].(int64)
+						if !ok {
+							logger.Error("Error: Invalid data type for 'hits'")
+							ack([]any{[]any{nil, false}}, nil)
+							return
+						}
+						// 记录流量和请求数
+						err = RecordTrafficToNode(database, "93athome", "clustertraffic", clusterID, bytesVal, hitsVal)
+						if err != nil {
+							logger.Error("Error recording traffic and request data sent to node:", err)
+							return
+						}
+						ack([]any{[]any{nil, time.Now().Format(time.RFC3339)}}, nil)
+					} else {
+						logger.Error("Error: Invalid data format in datas[0]")
+						ack([]any{[]any{nil, false}}, nil)
+					}
+				} else {
+					logger.Error("No data received")
+					ack([]any{[]any{nil, false}}, nil)
+				}
 			} else {
-				ack := datas[len(datas)-1].(func([]any, error))
 				ack([]any{[]any{map[string]string{"message": "Forbidden"}}}, nil)
 				client.Disconnect(true)
 			}
-			ack := datas[len(datas)-1].(func([]any, error))
-			ack([]any{[]any{nil, time.Now().Format(time.RFC3339)}}, nil)
 		})
 
 		// keepalive 部分
@@ -524,6 +549,12 @@ func SetupServer(ip string, port string, database *mongo.Client) {
 			}
 
 			url := fmt.Sprintf("%s/download/%s?%s", clusterfile.EndPoint, fileRecord.Hash, signature)
+
+			// 记录给节点的流量和请求数
+			err = RecordTrafficToNode(database, "93athome", "clustertraffic", cluster.ClusterID, fileRecord.Size, int64(1))
+			if err != nil {
+				logger.Error("Error recording traffic and request data sent to node:", err)
+			}
 
 			c.Redirect(http.StatusFound, url)
 			return

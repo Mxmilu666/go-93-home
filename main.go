@@ -68,6 +68,12 @@ func main() {
 		return
 	}
 
+	err = source.EnsureCollection(database, "93athome", "clustertraffic")
+	if err != nil {
+		logger.Error("Error ensuring clustertraffic collection: %v", err)
+		return
+	}
+
 	// 输出同步源的数量和详细信息
 	logger.Info("Number of sync sources: %d", len(config.SyncSources))
 	for i, syncSource := range config.SyncSources {
