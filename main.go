@@ -88,7 +88,7 @@ func main() {
 	}
 
 	// 获取 clusters 和 files 数据
-	clusters, err := source.GetDocuments[source.Cluster](database, "93athome", "cluster", nil)
+	clusters, err := source.GetDocuments[source.Cluster](database, "93athome", "cluster", nil, 0)
 	if err != nil {
 		logger.Error("Error getting cluster: %v", err)
 		return

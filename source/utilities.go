@@ -191,3 +191,14 @@ func CheckFileHash(database *mongo.Client, oid bson.ObjectID) error {
 
 	return nil
 }
+
+// 删除节点在线
+func removeClusterByID(clusterID bson.ObjectID) {
+	for i, cluster := range onlineClusters {
+		if cluster.ClusterID == clusterID {
+			// 删除节点
+			onlineClusters = append(onlineClusters[:i], onlineClusters[i+1:]...)
+			break
+		}
+	}
+}

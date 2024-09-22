@@ -3,6 +3,7 @@ package source
 import (
 	"fmt"
 	"io"
+	"math/rand"
 	"mime"
 	"net/http"
 	"net/url"
@@ -10,6 +11,7 @@ import (
 	"open93athome-golang/source/logger"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,9 +25,14 @@ import (
 
 var (
 	r                   *gin.Engine // 将 gin 的路由器也设为全局变量
-	clusters            []Cluster
+	onlineClusters      []Clusters
 	sessionToClusterMap = make(map[string]bson.ObjectID)
 )
+
+type Clusters struct {
+	ClusterID bson.ObjectID `bson:"_id" json:"clusterId"`
+	Endpoint  string        `bson:"endpoint" json:"endpoint"`
+}
 
 // corsMiddleware 添加 CORS 头部
 func corsMiddleware() gin.HandlerFunc {
@@ -179,7 +186,7 @@ func SetupServer(ip string, port string, database *mongo.Client) {
 							err := CheckFileHash(database, oid)
 							if err != nil {
 								ack := datas[len(datas)-1].(func([]any, error))
-								ack([]any{[]any{map[string]string{"message": fmt.Sprintf("服务器查活失败，请检查端口是否可用(%v)：Error: %v", id["data"].(map[string]interface{})["clusterId"].(string), err)}}}, nil)
+								ack([]any{[]any{map[string]string{"message": fmt.Sprintf("服务器查活失败，请检查端口是否可用(%v)：Error: %v", endpoint, err)}}}, nil)
 								success = false
 								break
 							}
@@ -189,6 +196,11 @@ func SetupServer(ip string, port string, database *mongo.Client) {
 						if success {
 							ack := datas[len(datas)-1].(func([]any, error))
 							ack([]any{[]any{nil, true}}, nil)
+							var newCluster = Clusters{
+								ClusterID: oid,
+								Endpoint:  endpoint,
+							}
+							onlineClusters = append(onlineClusters, newCluster)
 							logger.Info("cluster %v successfully enabled", oid)
 						}
 					}
@@ -197,12 +209,42 @@ func SetupServer(ip string, port string, database *mongo.Client) {
 		})
 
 		// keepalive 部分
-		client.On("keepalive", func(datas ...any) {
+		client.On("keep-alive", func(datas ...any) {
+			// TODO: keepalive
 			logger.Info("%v", datas)
+
+			session := string(client.Id())
+			clusterID, exists := sessionToClusterMap[session]
+			if exists {
+				logger.Info("Found ClusterID: %s for session: %s\n", clusterID.Hex(), session)
+			} else {
+				ack := datas[len(datas)-1].(func([]any, error))
+				ack([]any{[]any{map[string]string{"message": "Forbidden"}}}, nil)
+				client.Disconnect(true)
+			}
+			ack := datas[len(datas)-1].(func([]any, error))
+			ack([]any{[]any{nil, time.Now().Format(time.RFC3339)}}, nil)
+		})
+
+		// keepalive 部分
+		client.On("disable", func(datas ...any) {
+			// TODO: disable
+			session := string(client.Id())
+			clusterID, exists := sessionToClusterMap[session]
+			if exists {
+				delete(sessionToClusterMap, string(client.Id()))
+				removeClusterByID(clusterID)
+				logger.Info("Found ClusterID: %s for session: %s\n", clusterID.Hex(), session)
+				ack := datas[len(datas)-1].(func([]any, error))
+				ack([]any{[]any{nil, true}}, nil)
+			} else {
+				ack := datas[len(datas)-1].(func([]any, error))
+				ack([]any{[]any{map[string]string{"message": "Forbidden"}}}, nil)
+				client.Disconnect(true)
+			}
 		})
 
 		client.On("disconnect", func(...any) {
-			delete(sessionToClusterMap, string(client.Id()))
 		})
 	})
 
@@ -385,15 +427,31 @@ func SetupServer(ip string, port string, database *mongo.Client) {
 
 		// files 路由
 		openbmclapi.GET("/files", func(c *gin.Context) {
-			if !verifyClusterRequest(c) {
-				c.JSON(http.StatusForbidden, gin.H{"error": "Unauthorized"})
-				return
+
+			// 获取查询参数中的 lastModified
+			lastModifiedStr := c.Query("lastModified")
+			var lastModified int64 = 0
+			if lastModifiedStr != "" {
+				var err error
+				lastModified, err = strconv.ParseInt(lastModifiedStr, 10, 64)
+				if err != nil {
+					logger.Error("Invalid lastModified parameter: %v", err)
+					c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid lastModified parameter"})
+					return
+				}
 			}
 
-			filesInfo, err := GetDocuments[FileInfo](database, "93athome", "files", bson.D{})
+			// 获取 filelist
+			filesInfo, err := GetDocuments[FileInfo](database, "93athome", "files", bson.M{}, lastModified)
 			if err != nil {
 				logger.Error("Error getting files: %v", err)
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get files"})
+				return
+			}
+
+			// 如果没有文件，返回 204 状态码
+			if len(filesInfo) == 0 {
+				c.Status(http.StatusNoContent)
 				return
 			}
 
@@ -420,6 +478,7 @@ func SetupServer(ip string, port string, database *mongo.Client) {
 			c.Header("Content-Disposition", "attachment; filename=\"filelist\"")
 			c.Data(http.StatusOK, "application/octet-stream", avroData)
 		})
+
 	}
 
 	// 下载文件
@@ -442,6 +501,31 @@ func SetupServer(ip string, port string, database *mongo.Client) {
 		fileRecord, err := GetFileFromDB(database, "93athome", "files", syncSource, fileName)
 		if err != nil {
 			c.String(http.StatusNotFound, "404 not found")
+			return
+		}
+
+		// 检查 onlineClusters 是否为空
+		if len(onlineClusters) > 0 {
+			// 从在线集群中随机选择一个 clusterId
+			rand.Seed(time.Now().UnixNano())
+			cluster := onlineClusters[rand.Intn(len(onlineClusters))]
+
+			// 从节点中获取文件
+			clusterfile, err := GetClusterById(database, "93athome", "cluster", cluster.ClusterID)
+			if err != nil {
+				c.String(http.StatusNotFound, "404 not found on cluster")
+				return
+			}
+
+			signature, err := getSign(fileRecord.Hash, clusterfile.ClusterSecret)
+			if err != nil {
+				c.String(http.StatusInternalServerError, "error generating signature: %v", err)
+				return
+			}
+
+			url := fmt.Sprintf("%s/download/%s?%s", clusterfile.EndPoint, fileRecord.Hash, signature)
+
+			c.Redirect(http.StatusFound, url)
 			return
 		}
 

@@ -3,6 +3,7 @@ package source
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"open93athome-golang/source/logger"
 
@@ -73,13 +74,26 @@ func EnsureCollection(client *mongo.Client, dbName, collectionName string) error
 }
 
 // GetDocuments 从指定的集合中读取文档并解码为指定的类型 爱来自ChatGpt
-func GetDocuments[T any](client *mongo.Client, dbName, collectionName string, filter interface{}) ([]T, error) {
+func GetDocuments[T any](client *mongo.Client, dbName, collectionName string, filter interface{}, lastModified int64) ([]T, error) {
 	collection := client.Database(dbName).Collection(collectionName)
 	findOptions := options.Find()
 
-	// 如果过滤器为 nil，则将其设置为空文档
+	// 构建过滤器
 	if filter == nil {
-		filter = bson.D{}
+		filter = bson.M{}
+	}
+
+	// 如果 lastModified 不为 0，则将其添加到过滤器中
+	// 使用 mtime 字段和 $gt 运算符来匹配修改时间大于 lastModified 的文件
+	// 这样也能兼容 cluster 的查询
+	if lastModified > 0 {
+		lastModifiedTime := time.UnixMilli(lastModified)
+		filter = bson.M{
+			"$and": []bson.M{
+				filter.(bson.M), // 原有的过滤器条件
+				{"mtime": bson.M{"$gt": lastModifiedTime}}, // mtime 大于 lastModified
+			},
+		}
 	}
 
 	cursor, err := collection.Find(context.TODO(), filter, findOptions)
