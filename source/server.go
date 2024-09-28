@@ -214,38 +214,22 @@ func SetupServer(ip string, port string, database *mongo.Client) {
 			ack := datas[len(datas)-1].(func([]any, error))
 			clusterID, exists := sessionToClusterMap[session]
 			if exists {
-				// 检查 datas 的第一个元素并确保是 map
-				if len(datas) > 0 {
-					if dataMap, ok := datas[0].(map[string]interface{}); ok {
-						bytesVal, ok := dataMap["bytes"].(int64)
-						if !ok {
-							logger.Error("Error: Invalid data type for 'bytes'")
-							ack([]any{[]any{nil, false}}, nil)
-							return
-						}
-
-						hitsVal, ok := dataMap["hits"].(int64)
-						if !ok {
-							logger.Error("Error: Invalid data type for 'hits'")
-							ack([]any{[]any{nil, false}}, nil)
-							return
-						}
+				for _, data := range datas {
+					if m, ok := data.(map[string]interface{}); ok {
+						bytesVal := int64(m["bytes"].(float64))
+						hitsVal := int64(m["hits"].(float64))
 						// 记录流量和请求数
-						err = RecordTrafficToNode(database, "93athome", "clustertraffic", clusterID, bytesVal, hitsVal)
+						err = RecordTrafficFromNode(database, "93athome", "clustertraffic", clusterID, bytesVal, hitsVal)
 						if err != nil {
 							logger.Error("Error recording traffic and request data sent to node:", err)
 							return
 						}
+						logger.Info("cluster %v keepalive successfully: %v", clusterID, m)
 						ack([]any{[]any{nil, time.Now().Format(time.RFC3339)}}, nil)
-					} else {
-						logger.Error("Error: Invalid data format in datas[0]")
-						ack([]any{[]any{nil, false}}, nil)
 					}
-				} else {
-					logger.Error("No data received")
-					ack([]any{[]any{nil, false}}, nil)
 				}
 			} else {
+				ack := datas[len(datas)-1].(func([]any, error))
 				ack([]any{[]any{map[string]string{"message": "Forbidden"}}}, nil)
 				client.Disconnect(true)
 			}

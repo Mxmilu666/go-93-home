@@ -189,6 +189,12 @@ func CheckFileHash(database *mongo.Client, oid bson.ObjectID) error {
 		return fmt.Errorf("hash mismatch: expected %s, got %s", file.Hash, downloadedHashString)
 	}
 
+	// 给巡检流量也放到数据库里
+	err = RecordTrafficToNode(database, "93athome", "clustertraffic", cluster.ClusterID, file.Size, int64(1))
+	if err != nil {
+		return fmt.Errorf("Error recording traffic and request data sent to node:", err)
+	}
+
 	return nil
 }
 

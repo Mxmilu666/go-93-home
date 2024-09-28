@@ -31,8 +31,8 @@ func RecordTrafficToNode(client *mongo.Client, dbName, collectionName string, cl
 	// 构造增量更新
 	update := bson.M{
 		"$inc": bson.M{ // 增加给节点的流量和请求数
-			"pendingTraffic": PendingTraffic,
-			"pendingRequest": PendingRequest,
+			"pendTraffic": PendingTraffic,
+			"pendRequest": PendingRequest,
 		},
 		"$set": bson.M{ // 更新 timestamp 字段为当前时间
 			"timestamp": now,
@@ -64,8 +64,8 @@ func RecordTrafficFromNode(client *mongo.Client, dbName, collectionName string, 
 	// 构造增量更新
 	update := bson.M{
 		"$inc": bson.M{ // 增加节点上报的流量和请求数
-			"trafficReportedByNode": Traffic,
-			"requestReportedByNode": Request,
+			"traffic": Traffic,
+			"request": Request,
 		},
 		"$set": bson.M{ // 更新 timestamp 字段为当前时间
 			"timestamp": now,
