@@ -26,20 +26,15 @@ TODO
 ## 🫂 鸣谢
 **[SALTWOOD](https://github.com/SALTWOOD)**
 - [Open93AtHome](https://github.com/SaltWood-Studio/Open93AtHome-V3) - 提供了 jwthelper 和很多逻辑的思路
-- 
+  
 **[TTB-Network](https://github.com/TTB-Network)**
 - [Python-OpenBmclApi](https://github.com/TTB-Network/python-openbmclapi) - 提供了原生实现 Avro 编码的逻辑
 
 **[unify-z](https://github.com/unify-z)**
 - 编写了一部分的代码
 
-**[Dongyanmio](https://github.com/dongyanmio)**
-- [iodine-at-home](https://github.com/ZeroNexis/iodine-at-home) - 参考了一部分代码
-
 ## ❤ 友情链接
 [SaltWood-Studio/Open93AtHome-V3](https://github.com/SaltWood-Studio/Open93AtHome-V3)
-
-[ZeroNexis/iodine-at-home](https://github.com/ZeroNexis/iodine-at-home)
 
 [bangbang93/openbmclapi](https://github.com/bangbang93/openbmclapi)
 
