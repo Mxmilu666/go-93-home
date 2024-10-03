@@ -1,7 +1,7 @@
 package source
 
 import (
-	"anythingathome-golang/source/Helper"
+	"anythingathome-golang/source/helper"
 	"anythingathome-golang/source/logger"
 	"fmt"
 	"io"
@@ -15,10 +15,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/zishang520/socket.io/v2/socket"
 
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v5"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 )
@@ -105,7 +105,7 @@ func SetupServer(ip string, port string, database *mongo.Client) {
 		}
 
 		// 获取 JWT helper 实例
-		jwtHelper, err := Helper.GetInstance()
+		jwtHelper, err := helper.GetInstance()
 		if err != nil {
 			logger.Error("Error initializing JWT helper")
 			client.Disconnect(true)
@@ -185,7 +185,7 @@ func SetupServer(ip string, port string, database *mongo.Client) {
 						for i := 0; i < 5; i++ {
 							err := CheckFileHash(database, oid)
 							if err != nil {
-								logger.Error("%v 节点查活失败: %v", oid, err)
+								logger.Error("cluster %v enable failed: %v", oid, err)
 								ack := datas[len(datas)-1].(func([]any, error))
 								ack([]any{[]any{map[string]string{"message": fmt.Sprintf("服务器查活失败，请检查端口是否可用(%v)：Error：%v", endpoint, err)}}}, nil)
 								success = false
@@ -236,7 +236,22 @@ func SetupServer(ip string, port string, database *mongo.Client) {
 			}
 		})
 
-		// keepalive 部分
+		// request-cert 部分
+		client.On("request-cert", func(datas ...any) {
+			session := string(client.Id())
+			ack := datas[len(datas)-1].(func([]any, error))
+			clusterID, exists := sessionToClusterMap[session]
+			if exists {
+				logger.Info("Found ClusterID: %s for session: %s\n", clusterID.Hex(), session)
+				ack([]any{[]any{nil, true}}, nil)
+			} else {
+				ack := datas[len(datas)-1].(func([]any, error))
+				ack([]any{[]any{map[string]string{"message": "Forbidden"}}}, nil)
+				client.Disconnect(true)
+			}
+		})
+
+		// disable 部分
 		client.On("disable", func(datas ...any) {
 			session := string(client.Id())
 			clusterID, exists := sessionToClusterMap[session]
@@ -303,7 +318,7 @@ func SetupServer(ip string, port string, database *mongo.Client) {
 				return
 			}
 
-			jwtHelper, err := Helper.GetInstance()
+			jwtHelper, err := helper.GetInstance()
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Error initializing JWT helper"})
 				return
@@ -357,7 +372,7 @@ func SetupServer(ip string, port string, database *mongo.Client) {
 				return
 			}
 
-			jwtHelper, err := Helper.GetInstance()
+			jwtHelper, err := helper.GetInstance()
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Error initializing JWT helper"})
 				return
@@ -465,9 +480,9 @@ func SetupServer(ip string, port string, database *mongo.Client) {
 			}
 
 			// 将 filesInfo 转换为 BMCLAPIObject
-			var helperFiles []Helper.BMCLAPIObject
+			var helperFiles []helper.BMCLAPIObject
 			for _, info := range filesInfo {
-				helperFiles = append(helperFiles, Helper.BMCLAPIObject{
+				helperFiles = append(helperFiles, helper.BMCLAPIObject{
 					Path:         "/files/" + info.SyncSource + "/" + strings.Replace(info.FileName, "\\", "/", -1),
 					Hash:         info.Hash,
 					Size:         info.Size,

@@ -25,9 +25,18 @@ type SyncSourceConfig struct {
 	DestDir string `yaml:"destDir"`
 }
 
+type SSlConfig struct {
+	DNSProviders string `yaml:"dns"`
+	AuthEmail    string `yaml:"aurhEmail"`
+	AuthKey      string `yaml:"authKey"`
+	Kid          string `yaml:"kid"`
+	HmacEncoded  string `yaml:"hmacEncoded"`
+}
+
 type Config struct {
 	Server      ServerConfig       `yaml:"server"`
 	Database    DatabaseConfig     `yaml:"database"`
+	SSL         SSlConfig          `yaml:"cert"`
 	SyncSources []SyncSourceConfig `yaml:"syncSources"`
 }
 
@@ -42,6 +51,13 @@ func CreateDefaultConfig(filename string) error {
 			Port:     27017,
 			Username: "mongo",
 			Password: "mongo",
+		},
+		SSL: SSlConfig{
+			DNSProviders: "cloudflare",
+			AuthEmail:    "114514@114514.com",
+			AuthKey:      "1145141919810",
+			Kid:          "1145141919810",
+			HmacEncoded:  "1145141919810",
 		},
 		SyncSources: []SyncSourceConfig{
 			{

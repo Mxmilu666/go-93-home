@@ -1,7 +1,7 @@
 package source
 
 import (
-	"anythingathome-golang/source/Helper"
+	"anythingathome-golang/source/helper"
 	"crypto/hmac"
 	"crypto/sha1"
 	"crypto/sha256"
@@ -52,7 +52,7 @@ func verifyClusterRequest(c *gin.Context) bool {
 	tokenString := parts[1]
 
 	// 获取 JWTHelper 实例
-	jwtHelper, err := Helper.GetInstance()
+	jwtHelper, err := helper.GetInstance()
 	if err != nil {
 		return false
 	}
@@ -83,8 +83,8 @@ func verifyClusterRequest(c *gin.Context) bool {
 }
 
 // 获取 avro
-func GetAvroBytes(files []Helper.BMCLAPIObject) ([]byte, error) {
-	data, err := Helper.ComputeAvroBytes(files)
+func GetAvroBytes(files []helper.BMCLAPIObject) ([]byte, error) {
+	data, err := helper.ComputeAvroBytes(files)
 	if err != nil {
 		return nil, err
 	}

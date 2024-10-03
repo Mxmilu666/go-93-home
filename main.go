@@ -6,7 +6,7 @@ import (
 	"os"
 
 	"anythingathome-golang/source"
-	"anythingathome-golang/source/Helper"
+	"anythingathome-golang/source/helper"
 	"anythingathome-golang/source/logger"
 )
 
@@ -106,7 +106,7 @@ func main() {
 	}
 
 	// 初始化 JWT
-	Helper.GetInstance()
+	helper.GetInstance()
 
 	// 启动服务器
 	source.SetupServer(config.Server.Address, fmt.Sprintf("%d", config.Server.Port), database)
