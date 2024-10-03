@@ -45,7 +45,6 @@ func verifyClusterRequest(c *gin.Context) bool {
 	}
 
 	// 按空格分割，获取令牌部分
-	// 格式通常为 "Bearer token_value"
 	parts := strings.SplitN(authHeader, " ", 2)
 	if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
 		return false
@@ -69,7 +68,7 @@ func verifyClusterRequest(c *gin.Context) bool {
 		return false
 	}
 
-	// 可选：提取声明（claims）并进行额外的验证
+	// 提取声明（claims）并进行额外的验证
 	claims, ok := token.Claims.(jwt.MapClaims)
 	if !ok {
 		return false

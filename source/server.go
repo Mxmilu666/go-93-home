@@ -185,8 +185,9 @@ func SetupServer(ip string, port string, database *mongo.Client) {
 						for i := 0; i < 5; i++ {
 							err := CheckFileHash(database, oid)
 							if err != nil {
+								logger.Error("%v 节点查活失败: %v", oid, err)
 								ack := datas[len(datas)-1].(func([]any, error))
-								ack([]any{[]any{map[string]string{"message": fmt.Sprintf("服务器查活失败，请检查端口是否可用(%v)：Error: %v", endpoint, err)}}}, nil)
+								ack([]any{[]any{map[string]string{"message": fmt.Sprintf("服务器查活失败，请检查端口是否可用(%v)：Error：%v", endpoint, err)}}}, nil)
 								success = false
 								break
 							}
@@ -237,7 +238,6 @@ func SetupServer(ip string, port string, database *mongo.Client) {
 
 		// keepalive 部分
 		client.On("disable", func(datas ...any) {
-			// TODO: disable
 			session := string(client.Id())
 			clusterID, exists := sessionToClusterMap[session]
 			if exists {
@@ -291,7 +291,7 @@ func SetupServer(ip string, port string, database *mongo.Client) {
 			}
 
 			// 从数据库中获取指定的 Cluster
-			cluster, err := GetClusterById(database, DatabaseName, TrafficCollection, oid)
+			cluster, err := GetClusterById(database, DatabaseName, ClusterCollection, oid)
 			if err != nil {
 				logger.Error("Error getting cluster: %v", err)
 				c.JSON(http.StatusNotFound, gin.H{"error": "Cluster not found"})
@@ -507,7 +507,7 @@ func SetupServer(ip string, port string, database *mongo.Client) {
 		fileName := strings.Join(pathSegments[1:], "/")
 
 		// 从数据库查询文档
-		fileRecord, err := GetFileFromDB(database, DatabaseName, fileName, syncSource, fileName)
+		fileRecord, err := GetFileFromDB(database, DatabaseName, FilesCollection, syncSource, fileName)
 		if err != nil {
 			c.String(http.StatusNotFound, "404 not found")
 			return
