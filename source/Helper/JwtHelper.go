@@ -86,7 +86,7 @@ func (j *JwtHelper) loadKeys() error {
 func (j *JwtHelper) IssueToken(payload map[string]interface{}, audience string, expiresInSeconds int64) (string, error) {
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
 		"aud":  audience,
-		"iss":  "93@Home-Golang-Center-Server",
+		"iss":  "Anything-At-Home-Center-Server",
 		"exp":  time.Now().Add(time.Duration(expiresInSeconds) * time.Second).Unix(),
 		"data": payload,
 	})

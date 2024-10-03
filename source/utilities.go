@@ -1,6 +1,7 @@
 package source
 
 import (
+	"anythingathome-golang/source/Helper"
 	"crypto/hmac"
 	"crypto/sha1"
 	"crypto/sha256"
@@ -9,7 +10,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
-	"open93athome-golang/source/Helper"
 	"strings"
 	"time"
 
@@ -135,12 +135,12 @@ func getSign(path string, secret string) (string, error) {
 // 随机获取节点文件并检查hash
 func CheckFileHash(database *mongo.Client, oid bson.ObjectID) error {
 	//获取随机文件
-	file, err := GetRandomFile(database, "93athome", "files")
+	file, err := GetRandomFile(database, DatabaseName, FilesCollection)
 	if err != nil {
 		return fmt.Errorf("error getting random file: %v", err)
 	}
 
-	cluster, err := GetClusterById(database, "93athome", "cluster", oid)
+	cluster, err := GetClusterById(database, DatabaseName, ClusterCollection, oid)
 	if err != nil {
 		return fmt.Errorf("error getting cluster: %v", err)
 	}
@@ -161,7 +161,7 @@ func CheckFileHash(database *mongo.Client, oid bson.ObjectID) error {
 	}
 
 	// 设个 ua，别把主控当机器人拦了
-	req.Header.Set("User-Agent", "93athome-ctrl")
+	req.Header.Set("User-Agent", "Anything@Home-ctrl")
 
 	// 发起请求
 	resp, err := client.Do(req)
@@ -190,7 +190,7 @@ func CheckFileHash(database *mongo.Client, oid bson.ObjectID) error {
 	}
 
 	// 给巡检流量也放到数据库里
-	err = RecordTrafficToNode(database, "93athome", "clustertraffic", cluster.ClusterID, file.Size, int64(1))
+	err = RecordTrafficToNode(database, DatabaseName, TrafficCollection, cluster.ClusterID, file.Size, int64(1))
 	if err != nil {
 		return fmt.Errorf("Error recording traffic and request data sent to node:", err)
 	}

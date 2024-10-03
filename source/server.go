@@ -1,14 +1,14 @@
 package source
 
 import (
+	"anythingathome-golang/source/Helper"
+	"anythingathome-golang/source/logger"
 	"fmt"
 	"io"
 	"math/rand"
 	"mime"
 	"net/http"
 	"net/url"
-	"open93athome-golang/source/Helper"
-	"open93athome-golang/source/logger"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -175,7 +175,7 @@ func SetupServer(ip string, port string, database *mongo.Client) {
 							"byoc":     m["byoc"],
 						}
 
-						err = UpdateClusterFieldsById(database, "93athome", "cluster", oid, setcluster)
+						err = UpdateClusterFieldsById(database, DatabaseName, ClusterCollection, oid, setcluster)
 						if err != nil {
 							logger.Error("%v", err)
 						}
@@ -219,7 +219,7 @@ func SetupServer(ip string, port string, database *mongo.Client) {
 						bytesVal := int64(m["bytes"].(float64))
 						hitsVal := int64(m["hits"].(float64))
 						// 记录流量和请求数
-						err = RecordTrafficFromNode(database, "93athome", "clustertraffic", clusterID, bytesVal, hitsVal)
+						err = RecordTrafficFromNode(database, DatabaseName, TrafficCollection, clusterID, bytesVal, hitsVal)
 						if err != nil {
 							logger.Error("Error recording traffic and request data sent to node:", err)
 							return
@@ -269,7 +269,7 @@ func SetupServer(ip string, port string, database *mongo.Client) {
 	// 根路由
 	r.GET("/", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
-			"success": "Open93AtHome-Golang",
+			"success": "anythingathome-golang",
 		})
 	})
 	openbmclapiAgent := r.Group("/openbmclapi-agent")
@@ -291,7 +291,7 @@ func SetupServer(ip string, port string, database *mongo.Client) {
 			}
 
 			// 从数据库中获取指定的 Cluster
-			cluster, err := GetClusterById(database, "93athome", "cluster", oid)
+			cluster, err := GetClusterById(database, DatabaseName, TrafficCollection, oid)
 			if err != nil {
 				logger.Error("Error getting cluster: %v", err)
 				c.JSON(http.StatusNotFound, gin.H{"error": "Cluster not found"})
@@ -390,7 +390,7 @@ func SetupServer(ip string, port string, database *mongo.Client) {
 			}
 
 			// 从数据库中获取指定的 Cluster
-			cluster, err := GetClusterById(database, "93athome", "cluster", oid)
+			cluster, err := GetClusterById(database, DatabaseName, ClusterCollection, oid)
 			if err != nil {
 				logger.Error("Error getting cluster: %v", err)
 				c.JSON(http.StatusNotFound, gin.H{"error": "Cluster not found"})
@@ -451,7 +451,7 @@ func SetupServer(ip string, port string, database *mongo.Client) {
 			}
 
 			// 获取 filelist
-			filesInfo, err := GetDocuments[FileInfo](database, "93athome", "files", bson.M{}, lastModified)
+			filesInfo, err := GetDocuments[FileInfo](database, DatabaseName, FilesCollection, bson.M{}, lastModified)
 			if err != nil {
 				logger.Error("Error getting files: %v", err)
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get files"})
@@ -507,7 +507,7 @@ func SetupServer(ip string, port string, database *mongo.Client) {
 		fileName := strings.Join(pathSegments[1:], "/")
 
 		// 从数据库查询文档
-		fileRecord, err := GetFileFromDB(database, "93athome", "files", syncSource, fileName)
+		fileRecord, err := GetFileFromDB(database, DatabaseName, fileName, syncSource, fileName)
 		if err != nil {
 			c.String(http.StatusNotFound, "404 not found")
 			return
@@ -520,7 +520,7 @@ func SetupServer(ip string, port string, database *mongo.Client) {
 			cluster := onlineClusters[rand.Intn(len(onlineClusters))]
 
 			// 从节点中获取文件
-			clusterfile, err := GetClusterById(database, "93athome", "cluster", cluster.ClusterID)
+			clusterfile, err := GetClusterById(database, DatabaseName, ClusterCollection, cluster.ClusterID)
 			if err != nil {
 				c.String(http.StatusNotFound, "404 not found on cluster")
 				return
@@ -535,7 +535,7 @@ func SetupServer(ip string, port string, database *mongo.Client) {
 			url := fmt.Sprintf("%s/download/%s?%s", clusterfile.EndPoint, fileRecord.Hash, signature)
 
 			// 记录给节点的流量和请求数
-			err = RecordTrafficToNode(database, "93athome", "clustertraffic", cluster.ClusterID, fileRecord.Size, int64(1))
+			err = RecordTrafficToNode(database, DatabaseName, TrafficCollection, cluster.ClusterID, fileRecord.Size, int64(1))
 			if err != nil {
 				logger.Error("Error recording traffic and request data sent to node:", err)
 			}

@@ -5,15 +5,15 @@ import (
 	"fmt"
 	"os"
 
-	"open93athome-golang/source"
-	"open93athome-golang/source/Helper"
-	"open93athome-golang/source/logger"
+	"anythingathome-golang/source"
+	"anythingathome-golang/source/Helper"
+	"anythingathome-golang/source/logger"
 )
 
 func main() {
-	fmt.Printf("Open93AtHome-Golang v0.0.1 \n")
+	fmt.Printf("AnythingAtHome-golang v0.0.1 \n")
 
-	logger.InitLogger(logger.DEBUG, "[93@home-Go] ")
+	logger.InitLogger(logger.DEBUG, "[Anything@Home-Go] ")
 	logger.Info("Starting...")
 
 	configFile := "config.yml"
@@ -56,19 +56,19 @@ func main() {
 	}()
 
 	// 确保需要的集合存在
-	err = source.EnsureCollection(database, "93athome", "cluster")
+	err = source.EnsureCollection(database, source.DatabaseName, source.ClusterCollection)
 	if err != nil {
 		logger.Error("Error ensuring clusters collection: %v", err)
 		return
 	}
 
-	err = source.EnsureCollection(database, "93athome", "files")
+	err = source.EnsureCollection(database, source.DatabaseName, source.FilesCollection)
 	if err != nil {
 		logger.Error("Error ensuring files collection: %v", err)
 		return
 	}
 
-	err = source.EnsureCollection(database, "93athome", "clustertraffic")
+	err = source.EnsureCollection(database, source.DatabaseName, source.TrafficCollection)
 	if err != nil {
 		logger.Error("Error ensuring clustertraffic collection: %v", err)
 		return
@@ -94,7 +94,7 @@ func main() {
 	}
 
 	// 获取 clusters 和 files 数据
-	clusters, err := source.GetDocuments[source.Cluster](database, "93athome", "cluster", nil, 0)
+	clusters, err := source.GetDocuments[source.Cluster](database, source.DatabaseName, source.ClusterCollection, nil, 0)
 	if err != nil {
 		logger.Error("Error getting cluster: %v", err)
 		return

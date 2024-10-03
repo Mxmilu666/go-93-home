@@ -1,12 +1,12 @@
 package source
 
 import (
+	"anythingathome-golang/source/logger"
 	"context"
 	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
 	"io"
-	"open93athome-golang/source/logger"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -64,7 +64,7 @@ func ComputeFileHash(filePath string) (string, error) {
 
 // SyncFiles 同步文件并将文件信息写入 MongoDB
 func SyncFiles(client *mongo.Client, syncSource SyncSourceConfig) error {
-	collection := client.Database("93athome").Collection("files")
+	collection := client.Database(DatabaseName).Collection(FilesCollection)
 	var wg sync.WaitGroup
 
 	var filePaths []string

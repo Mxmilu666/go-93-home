@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"open93athome-golang/source/logger"
+	"anythingathome-golang/source/logger"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -23,6 +23,11 @@ type Cluster struct {
 	Byoc          bool          `bson:"byoc"`
 	Flavor        any           `bson:"flavor"`
 }
+
+var DatabaseName = "anythingathome"
+var ClusterCollection = "cluster"
+var FilesCollection = "files"
+var TrafficCollection = "clustertraffic"
 
 // SetupDatabase 连接到 MongoDB
 func SetupDatabase(uri string) (*mongo.Client, error) {

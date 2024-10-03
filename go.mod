@@ -1,4 +1,4 @@
-module open93athome-golang
+module anythingathome-golang
 
 go 1.23.1
 
