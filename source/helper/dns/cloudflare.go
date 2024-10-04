@@ -73,7 +73,7 @@ func AddDNSRecord(email, apiToken, zoneID string, record DNSRecord) error {
 		return err
 	}
 
-	req.Header.Set("Authorization", "Bearer "+apiToken)
+	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Auth-Key", apiToken)
 	req.Header.Set("X-Auth-Email", email)
 
@@ -92,15 +92,14 @@ func AddDNSRecord(email, apiToken, zoneID string, record DNSRecord) error {
 }
 
 func getSecondLevelDomain(domain string) string {
+	// 将域名按 '.' 分割
 	parts := strings.Split(domain, ".")
-	if len(parts) >= 3 {
-		// 处理三级或更高级的域名
-		return strings.Join(parts[len(parts)-3:], ".")
-	} else if len(parts) == 2 {
-		// 已经是二级域名
-		return domain
-	} else {
-		// 无效的域名
+
+	// 检查域名部分的数量
+	if len(parts) < 2 {
 		return ""
 	}
+
+	// 返回倒数第二个部分（即二级域名）
+	return parts[len(parts)-2] + "." + parts[len(parts)-1]
 }

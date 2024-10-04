@@ -149,8 +149,11 @@ func SetupServer(ip string, port string, database *mongo.Client, cfConfig *helpe
 				if m, ok := data.(map[string]interface{}); ok {
 					var endpoint string
 					var host string
-					if host, exists := m["host"]; exists {
-						if port, exists := m["port"]; exists {
+					var port float64
+					if h, exists := m["host"]; exists {
+						host = h.(string)
+						if p, exists := m["port"]; exists {
+							port = p.(float64)
 							endpoint = fmt.Sprintf("https://%v:%v", host, port)
 						} else {
 							ack := datas[len(datas)-1].(func([]any, error))
@@ -158,11 +161,13 @@ func SetupServer(ip string, port string, database *mongo.Client, cfConfig *helpe
 							client.Disconnect(true)
 						}
 					} else {
-						host := client.Handshake().Address
+						// 处理没有host的情况
+						host = client.Handshake().Address
 						colonIndex := strings.LastIndex(host, ":")
 						host = host[:colonIndex]
-						if port, exists := m["port"]; exists {
-							endpoint = fmt.Sprintf("http://%v:%v", host, port)
+						if p, exists := m["port"]; exists {
+							port = p.(float64)
+							endpoint = fmt.Sprintf("https://%v:%v", host, port)
 						} else {
 							ack := datas[len(datas)-1].(func([]any, error))
 							ack([]any{[]any{map[string]string{"message": "Port not found"}}}, nil)
@@ -180,12 +185,11 @@ func SetupServer(ip string, port string, database *mongo.Client, cfConfig *helpe
 					if !byoc {
 						record := dns.DNSRecord{
 							Type:    "A",
-							Name:    oid.Hex() + cfConfig.Domain,
+							Name:    oid.Hex() + "." + cfConfig.Domain,
 							Content: host,
 							TTL:     60,
 							Proxied: false,
 						}
-
 						zoneID, err := dns.GetZoneID(cfConfig.AuthEmail, cfConfig.AuthKey, cfConfig.Domain)
 						if err != nil {
 							logger.Info("Error getting zone ID: %v", err)
@@ -197,6 +201,10 @@ func SetupServer(ip string, port string, database *mongo.Client, cfConfig *helpe
 						} else {
 							logger.Info("DNS record added successfully.")
 						}
+
+						endpoint = fmt.Sprintf("https://%v:%v", oid.Hex()+"."+cfConfig.Domain, port)
+
+						time.Sleep(10000 * time.Millisecond)
 					}
 
 					if endpoint != "" {
@@ -211,7 +219,7 @@ func SetupServer(ip string, port string, database *mongo.Client, cfConfig *helpe
 							logger.Error("%v", err)
 						}
 
-						// 尝试巡检五次，每次间隔 0.5 秒
+						// 尝试巡检五次
 						success := true
 						for i := 0; i < 5; i++ {
 							err := CheckFileHash(database, oid)

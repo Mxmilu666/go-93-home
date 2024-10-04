@@ -2,6 +2,7 @@ package source
 
 import (
 	"anythingathome-golang/source/helper"
+	"context"
 	"crypto/hmac"
 	"crypto/sha1"
 	"crypto/sha256"
@@ -9,6 +10,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -152,8 +154,21 @@ func CheckFileHash(database *mongo.Client, oid bson.ObjectID) error {
 	// 构建 URL，请求检查文件的 hash
 	url := fmt.Sprintf("%s/download/%s?%s", cluster.EndPoint, file.Hash, signature)
 
-	// 创建 HTTP 客户端
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := &http.Client{
+		Transport: &http.Transport{
+			DialContext: (&net.Dialer{
+				Timeout: 30 * time.Second,
+				Resolver: &net.Resolver{
+					PreferGo: false,
+					Dial: func(ctx context.Context, network, addr string) (net.Conn, error) {
+						return net.Dial("udp", "1.1.1.1:53")
+					},
+				},
+			}).DialContext,
+		},
+		Timeout: 30 * time.Second,
+	}
+
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return err
@@ -161,6 +176,8 @@ func CheckFileHash(database *mongo.Client, oid bson.ObjectID) error {
 
 	// 设个 ua，别把主控当机器人拦了
 	req.Header.Set("User-Agent", "Anything@Home-ctrl")
+
+	req.Close = true
 
 	// 发起请求
 	resp, err := client.Do(req)
