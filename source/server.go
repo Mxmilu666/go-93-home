@@ -2,6 +2,7 @@ package source
 
 import (
 	"anythingathome-golang/source/helper"
+	"anythingathome-golang/source/helper/dns"
 	"anythingathome-golang/source/logger"
 	"fmt"
 	"io"
@@ -82,7 +83,7 @@ func filterLogs() gin.HandlerFunc {
 	}
 }
 
-func SetupServer(ip string, port string, database *mongo.Client) {
+func SetupServer(ip string, port string, database *mongo.Client, cfConfig *helper.CloudflareConfig) {
 	gin.SetMode(gin.ReleaseMode)
 
 	server := socket.NewServer(nil, nil)
@@ -147,10 +148,10 @@ func SetupServer(ip string, port string, database *mongo.Client) {
 			for _, data := range datas {
 				if m, ok := data.(map[string]interface{}); ok {
 					var endpoint string
-
+					var host string
 					if host, exists := m["host"]; exists {
 						if port, exists := m["port"]; exists {
-							endpoint = fmt.Sprintf("http://%v:%v", host, port)
+							endpoint = fmt.Sprintf("https://%v:%v", host, port)
 						} else {
 							ack := datas[len(datas)-1].(func([]any, error))
 							ack([]any{[]any{map[string]string{"message": "Port not found"}}}, nil)
@@ -168,6 +169,36 @@ func SetupServer(ip string, port string, database *mongo.Client) {
 							client.Disconnect(true)
 						}
 					}
+
+					var byoc bool
+					if m["byoc"] == nil {
+						byoc = false
+					} else {
+						byoc, _ = m["byoc"].(bool)
+					}
+
+					if !byoc {
+						record := dns.DNSRecord{
+							Type:    "A",
+							Name:    oid.Hex() + cfConfig.Domain,
+							Content: host,
+							TTL:     60,
+							Proxied: false,
+						}
+
+						zoneID, err := dns.GetZoneID(cfConfig.AuthEmail, cfConfig.AuthKey, cfConfig.Domain)
+						if err != nil {
+							logger.Info("Error getting zone ID: %v", err)
+							return
+						}
+
+						if err := dns.AddDNSRecord(cfConfig.AuthEmail, cfConfig.AuthKey, zoneID, record); err != nil {
+							logger.Error("Error adding DNS record: %v", err)
+						} else {
+							logger.Info("DNS record added successfully.")
+						}
+					}
+
 					if endpoint != "" {
 						setcluster := bson.M{
 							"endPoint": endpoint,
@@ -242,8 +273,42 @@ func SetupServer(ip string, port string, database *mongo.Client) {
 			ack := datas[len(datas)-1].(func([]any, error))
 			clusterID, exists := sessionToClusterMap[session]
 			if exists {
+				cert, valid, err := GetCertOrRequest(database, DatabaseName, CertCollection, oid)
+				if err != nil {
+					logger.Error("%v", err)
+				}
+
+				if valid {
+					ack([]any{[]any{nil, map[string]string{"_id": cert.Id.Hex(), "clusterId": oid.Hex(), "cert": cert.ClusterCert, "key": cert.ClusterKey, "expires": cert.ClusterExpiry.Format("2006-01-02 15:04:05 +0000 UTC"), "__v": "0"}}}, nil)
+				} else {
+					certStatus := helper.NewCertRequestStatus(cfConfig, database)
+					myUser := helper.MyUser{
+						Email: "milu@milu.moe",
+					}
+					certChan := certStatus.RequestCert(clusterID.Hex(), &myUser)
+					certificates := <-certChan // 等待证书或错误
+					if certificates != nil {
+						expiry, err := helper.GetCertificateExpiry(certificates.Certificate)
+						if err != nil {
+							logger.Error("Failed to get certificate expiry: %v", err)
+						}
+						setcluster := bson.M{
+							"cluster_cert":   certificates.Certificate,
+							"cluster_key":    certificates.PrivateKey,
+							"cluster_expiry": expiry,
+						}
+						err = UpdateCertFieldsById(database, DatabaseName, CertCollection, oid, setcluster)
+						if err != nil {
+							logger.Error("%v", err)
+						}
+
+						ack([]any{[]any{nil, map[string]string{"_id": cert.Id.Hex(), "clusterId": oid.Hex(), "cert": string(certificates.Certificate), "key": string(certificates.PrivateKey), "expires": expiry.Format("2006-01-02 15:04:05 +0000 UTC"), "__v": "0"}}}, nil)
+					} else {
+
+					}
+				}
 				logger.Info("Found ClusterID: %s for session: %s\n", clusterID.Hex(), session)
-				ack([]any{[]any{nil, true}}, nil)
+				//ack([]any{[]any{nil, true}}, nil)
 			} else {
 				ack := datas[len(datas)-1].(func([]any, error))
 				ack([]any{[]any{map[string]string{"message": "Forbidden"}}}, nil)

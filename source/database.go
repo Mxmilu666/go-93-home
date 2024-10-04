@@ -24,10 +24,18 @@ type Cluster struct {
 	Flavor        any           `bson:"flavor"`
 }
 
+type CertInfo struct {
+	Id            bson.ObjectID `bson:"_id"`
+	ClusterCert   string        `bson:"cluster_cert"`
+	ClusterKey    string        `bson:"cluster_key"`
+	ClusterExpiry time.Time     `bson:"cluster_expiry"`
+}
+
 var DatabaseName = "anythingathome"
 var ClusterCollection = "cluster"
 var FilesCollection = "files"
-var TrafficCollection = "clustertraffic"
+var TrafficCollection = "cluster_traffic"
+var CertCollection = "cluster_cert"
 
 // SetupDatabase 连接到 MongoDB
 func SetupDatabase(uri string) (*mongo.Client, error) {
@@ -169,6 +177,24 @@ func UpdateClusterFieldsById(client *mongo.Client, dbName, collectionName string
 	return nil
 }
 
+// 更新证书信息
+func UpdateCertFieldsById(client *mongo.Client, dbName, collectionName string, id bson.ObjectID, updates bson.M) error {
+	collection := client.Database(dbName).Collection(collectionName)
+
+	// 使用 $set 操作符更新文档
+	update := bson.M{
+		"$set": updates,
+	}
+
+	// 根据 clusterId 更新文档，如果不存在则新建
+	_, err := collection.UpdateOne(context.TODO(), bson.M{"clusterId": id}, update, options.Update().SetUpsert(true))
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // 从数据库中随机获取一个文件
 func GetRandomFile(client *mongo.Client, dbName, collectionName string) (*FileInfo, error) {
 	collection := client.Database(dbName).Collection(collectionName)
@@ -194,4 +220,25 @@ func GetRandomFile(client *mongo.Client, dbName, collectionName string) (*FileIn
 	}
 
 	return nil, fmt.Errorf("no file found")
+}
+
+// 查询 cert
+func GetCertOrRequest(client *mongo.Client, dbName, collectionName string, clusterId bson.ObjectID) (CertInfo, bool, error) {
+	collection := client.Database(dbName).Collection(collectionName)
+
+	// 查询条件
+	var result CertInfo
+
+	err := collection.FindOne(context.TODO(), bson.M{"clusterId": clusterId}).Decode(&result)
+	if err != nil {
+		return CertInfo{}, false, err // 返回空结构体
+	}
+
+	// 判断 cluster_cert 是否存在以及 cluster_expiry 是否超过当前时间
+	if result.ClusterCert != "" && result.ClusterExpiry.After(time.Now()) {
+		return result, true, nil
+	}
+
+	// 条件不满足，返回空结构体和 false
+	return CertInfo{}, false, nil
 }

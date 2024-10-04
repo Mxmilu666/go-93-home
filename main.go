@@ -30,7 +30,7 @@ func main() {
 	}
 
 	// 读取配置文件
-	config, err := source.ReadConfig(configFile)
+	Config, err := source.ReadConfig(configFile)
 	if err != nil {
 		logger.Error("Error reading config file: %v", err)
 		return
@@ -38,10 +38,10 @@ func main() {
 
 	// 初始化数据库
 	uri := fmt.Sprintf("mongodb://%s:%s@%s:%d",
-		config.Database.Username,
-		config.Database.Password,
-		config.Database.Address,
-		config.Database.Port,
+		Config.Database.Username,
+		Config.Database.Password,
+		Config.Database.Address,
+		Config.Database.Port,
 	)
 	database, err := source.SetupDatabase(uri)
 	if err != nil {
@@ -70,13 +70,19 @@ func main() {
 
 	err = source.EnsureCollection(database, source.DatabaseName, source.TrafficCollection)
 	if err != nil {
-		logger.Error("Error ensuring clustertraffic collection: %v", err)
+		logger.Error("Error ensuring cluster_traffic collection: %v", err)
+		return
+	}
+
+	err = source.EnsureCollection(database, source.DatabaseName, source.CertCollection)
+	if err != nil {
+		logger.Error("Error ensuring cluster_cert collection: %v", err)
 		return
 	}
 
 	// 输出同步源的数量和详细信息
-	logger.Info("Number of sync sources: %d", len(config.SyncSources))
-	for i, syncSource := range config.SyncSources {
+	logger.Info("Number of sync sources: %d", len(Config.SyncSources))
+	for i, syncSource := range Config.SyncSources {
 		logger.Info("Sync Source %d [%s]: URL=%s, Branch=%s, DestDir=%s", i+1, syncSource.NAME, syncSource.URL, syncSource.Branch, syncSource.DestDir)
 		// Clone or pull the Git repo
 		err := source.CloneOrPullRepo(syncSource.URL, syncSource.Branch, syncSource.DestDir)
@@ -108,6 +114,9 @@ func main() {
 	// 初始化 JWT
 	helper.GetInstance()
 
+	// 初始化 CloudflareConfig
+	cfConfig := helper.NewCloudflareConfig(Config.SSL.AuthEmail, Config.SSL.AuthKey, Config.SSL.Domain)
+
 	// 启动服务器
-	source.SetupServer(config.Server.Address, fmt.Sprintf("%d", config.Server.Port), database)
+	source.SetupServer(Config.Server.Address, fmt.Sprintf("%d", Config.Server.Port), database, cfConfig)
 }

@@ -26,6 +26,7 @@ type SyncSourceConfig struct {
 }
 
 type SSlConfig struct {
+	Domain       string `yaml:"domain"`
 	DNSProviders string `yaml:"dns"`
 	AuthEmail    string `yaml:"aurhEmail"`
 	AuthKey      string `yaml:"authKey"`
@@ -53,11 +54,10 @@ func CreateDefaultConfig(filename string) error {
 			Password: "mongo",
 		},
 		SSL: SSlConfig{
+			Domain:       "114514.com",
 			DNSProviders: "cloudflare",
 			AuthEmail:    "114514@114514.com",
-			AuthKey:      "1145141919810",
-			Kid:          "1145141919810",
-			HmacEncoded:  "1145141919810",
+			AuthKey:      "unify_is_dl_114514",
 		},
 		SyncSources: []SyncSourceConfig{
 			{

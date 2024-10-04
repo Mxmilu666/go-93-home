@@ -4,6 +4,7 @@ go 1.23.1
 
 require (
 	github.com/gin-gonic/gin v1.10.0
+	github.com/go-acme/lego/v4 v4.18.0
 	github.com/golang-jwt/jwt/v5 v5.2.1
 	github.com/klauspost/compress v1.17.9
 	github.com/schollz/progressbar/v3 v3.14.6
@@ -22,7 +23,6 @@ require (
 	github.com/cloudwego/iasm v0.2.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.5 // indirect
 	github.com/gin-contrib/sse v0.1.0 // indirect
-	github.com/go-acme/lego/v4 v4.18.0 // indirect
 	github.com/go-jose/go-jose/v4 v4.0.2 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
