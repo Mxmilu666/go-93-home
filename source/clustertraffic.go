@@ -1,8 +1,10 @@
 package source
 
 import (
+	"anythingathome-golang/source/logger"
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -11,12 +13,22 @@ import (
 )
 
 type TrafficRecord struct {
-	ClusterID      bson.ObjectID `bson:"clusterId"`      // 节点或集群的唯一ID
-	Timestamp      time.Time     `bson:"timestamp"`      // 最后更新时间
-	PendingTraffic int64         `bson:"pendingTraffic"` // 给节点的流量
-	Traffic        int64         `bson:"traffic"`        // 节点上报的流量
-	PendingRequest int64         `bson:"pendingRequest"` // 给节点的请求数
-	Request        int64         `bson:"request"`        // 节点上报的请求数
+	ClusterID      bson.ObjectID `json:"clusterId"`      // 节点或集群的唯一ID
+	PendingTraffic int64         `json:"pendingTraffic"` // 给节点的流量
+	Traffic        int64         `json:"traffic"`        // 节点上报的流量
+	PendingRequest int64         `json:"pendingRequest"` // 给节点的请求数
+	Request        int64         `json:"request"`        // 节点上报的请求数
+	Timestamp      time.Time     `json:"timestamp"`      // 最后更新时间
+}
+
+type ClusterResponse struct {
+	ClusterID bson.ObjectID `json:"_id"`
+	Name      string        `json:"name"`
+	CreateAt  bson.DateTime `json:"createAt"`
+	IsBanned  bool          `json:"isBanned"`
+	Byoc      bool          `json:"byoc"`
+	Flavor    any           `json:"flavor"`
+	Metric    any           `json:"metric"`
 }
 
 // RecordTrafficToNode 传入增量数据，更新给节点的流量和请求数
@@ -83,4 +95,34 @@ func RecordTrafficFromNode(client *mongo.Client, dbName, collectionName string, 
 	}
 
 	return nil
+}
+
+// 获取 ClusterTraffic 列表并按 PendRequest 排序
+func GetClusterTrafficDetails(client *mongo.Client, dbName string) ([]TrafficRecord, error) {
+	trafficCollection := client.Database(dbName).Collection("cluster_traffic")
+	cursor, err := trafficCollection.Find(context.TODO(), bson.D{})
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(context.TODO())
+
+	var trafficList []TrafficRecord
+	if err = cursor.All(context.TODO(), &trafficList); err != nil {
+		return nil, err
+	}
+
+	// 按 PendRequest 排序
+	sort.Slice(trafficList, func(i, j int) bool {
+		return trafficList[i].PendingRequest > trafficList[j].PendingRequest
+	})
+
+	for _, traffic := range trafficList {
+		_, err := GetClusterById(client, dbName, ClusterCollection, traffic.ClusterID)
+		if err != nil {
+			logger.Error("Error fetching cluster:", err)
+			continue
+		}
+	}
+
+	return trafficList, nil
 }

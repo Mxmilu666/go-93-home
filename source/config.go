@@ -30,8 +30,6 @@ type SSlConfig struct {
 	DNSProviders string `yaml:"dns"`
 	AuthEmail    string `yaml:"aurhEmail"`
 	AuthKey      string `yaml:"authKey"`
-	Kid          string `yaml:"kid"`
-	HmacEncoded  string `yaml:"hmacEncoded"`
 }
 
 type Config struct {

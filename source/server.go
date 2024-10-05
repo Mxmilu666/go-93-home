@@ -6,6 +6,7 @@ import (
 	"anythingathome-golang/source/logger"
 	"fmt"
 	"io"
+	"log"
 	"math/rand"
 	"mime"
 	"net/http"
@@ -578,6 +579,42 @@ func SetupServer(ip string, port string, database *mongo.Client, cfConfig *helpe
 
 	}
 
+	// API 路由
+	api := r.Group("/api")
+	{
+		// rank 路由
+		api.GET("/rank", func(c *gin.Context) {
+			trafficList, err := GetClusterTrafficDetails(database, DatabaseName)
+			if err != nil {
+				log.Fatal(err)
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"error": err.Error(),
+				})
+			}
+			var clusters []ClusterResponse
+			for _, traffic := range trafficList {
+				cluster, err := GetClusterById(database, DatabaseName, ClusterCollection, traffic.ClusterID)
+				if err != nil {
+					log.Println("Error fetching cluster:", err)
+					continue
+				}
+
+				response := ClusterResponse{
+					ClusterID: cluster.ClusterID,
+					Name:      cluster.Name,
+					CreateAt:  cluster.CreateAt,
+					IsBanned:  cluster.IsBanned,
+					Byoc:      cluster.Byoc,
+					Flavor:    cluster.Flavor,
+					Metric:    traffic,
+				}
+
+				clusters = append(clusters, response)
+			}
+
+			c.JSON(http.StatusOK, clusters)
+		})
+	}
 	// 下载文件
 	r.GET("/files/*filepath", func(c *gin.Context) {
 		// 获取整个路径
