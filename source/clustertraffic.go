@@ -4,7 +4,6 @@ import (
 	"anythingathome-golang/source/logger"
 	"context"
 	"fmt"
-	"sort"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -13,11 +12,11 @@ import (
 )
 
 type TrafficRecord struct {
-	ClusterID      bson.ObjectID `json:"clusterId"`      // 节点或集群的唯一ID
-	PendingTraffic int64         `json:"pendingTraffic"` // 给节点的流量
+	ClusterID      bson.ObjectID `json:"clusterId"`      // 节点ID
 	Traffic        int64         `json:"traffic"`        // 节点上报的流量
-	PendingRequest int64         `json:"pendingRequest"` // 给节点的请求数
 	Request        int64         `json:"request"`        // 节点上报的请求数
+	PendingTraffic int64         `json:"pendingTraffic"` // 给节点的流量
+	PendingRequest int64         `json:"pendingRequest"` // 给节点的请求数
 	Timestamp      time.Time     `json:"timestamp"`      // 最后更新时间
 }
 
@@ -26,7 +25,6 @@ type ClusterResponse struct {
 	Name      string        `json:"name"`
 	CreateAt  bson.DateTime `json:"createAt"`
 	IsBanned  bool          `json:"isBanned"`
-	Byoc      bool          `json:"byoc"`
 	Flavor    any           `json:"flavor"`
 	Metric    any           `json:"metric"`
 }
@@ -97,32 +95,75 @@ func RecordTrafficFromNode(client *mongo.Client, dbName, collectionName string, 
 	return nil
 }
 
-// 获取 ClusterTraffic 列表并按 PendRequest 排序
-func GetClusterTrafficDetails(client *mongo.Client, dbName string) ([]TrafficRecord, error) {
-	trafficCollection := client.Database(dbName).Collection("cluster_traffic")
-	cursor, err := trafficCollection.Find(context.TODO(), bson.D{})
+// 获取 ClusterTraffic
+func GetClusterTrafficDetails(client *mongo.Client, dbName, ClusterCollection, TrafficCollection string) ([]ClusterResponse, error) {
+	trafficCollection := client.Database(dbName).Collection(TrafficCollection)
+
+	// 使用聚合查询同时获取 ClusterTraffic 和相关 Cluster 数据
+	pipeline := mongo.Pipeline{
+		{
+			{Key: "$lookup", Value: bson.M{
+				"from":         ClusterCollection,
+				"localField":   "clusterId",
+				"foreignField": "_id",
+				"as":           "cluster_info",
+			}},
+		},
+		{
+			{Key: "$unwind", Value: bson.M{"path": "$cluster_info"}},
+		},
+		{
+			{Key: "$sort", Value: bson.M{"pendRequest": -1}},
+		},
+	}
+
+	cursor, err := trafficCollection.Aggregate(context.TODO(), pipeline)
 	if err != nil {
 		return nil, err
 	}
 	defer cursor.Close(context.TODO())
 
-	var trafficList []TrafficRecord
-	if err = cursor.All(context.TODO(), &trafficList); err != nil {
+	var responses []ClusterResponse
+	for cursor.Next(context.TODO()) {
+		var result struct {
+			ClusterInfo struct {
+				ID       bson.ObjectID `bson:"_id"`
+				Name     string        `bson:"name"`
+				CreateAt bson.DateTime `bson:"createAt"`
+				IsBanned bool          `bson:"isBanned"`
+				Flavor   any           `bson:"flavor"`
+			} `bson:"cluster_info"`
+			PendRequest int   `bson:"pendRequest"`
+			PendTraffic int64 `bson:"pendTraffic"`
+			Request     int   `bson:"request"`
+			Traffic     int   `bson:"traffic"`
+		}
+
+		if err := cursor.Decode(&result); err != nil {
+			logger.Error("Error decoding response:", err)
+			continue
+		}
+
+		response := ClusterResponse{
+			ClusterID: result.ClusterInfo.ID,
+			Name:      result.ClusterInfo.Name,
+			CreateAt:  result.ClusterInfo.CreateAt,
+			IsBanned:  result.ClusterInfo.IsBanned,
+			Flavor:    result.ClusterInfo.Flavor,
+			Metric: bson.M{
+				"request":     result.Request,
+				"traffic":     result.Traffic,
+				"pendRequest": result.PendRequest,
+				"pendTraffic": result.PendTraffic,
+			},
+		}
+
+		responses = append(responses, response)
+	}
+
+	if err := cursor.Err(); err != nil {
 		return nil, err
 	}
 
-	// 按 PendRequest 排序
-	sort.Slice(trafficList, func(i, j int) bool {
-		return trafficList[i].PendingRequest > trafficList[j].PendingRequest
-	})
-
-	for _, traffic := range trafficList {
-		_, err := GetClusterById(client, dbName, ClusterCollection, traffic.ClusterID)
-		if err != nil {
-			logger.Error("Error fetching cluster:", err)
-			continue
-		}
-	}
-
-	return trafficList, nil
+	return responses, nil
 }

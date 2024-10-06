@@ -292,7 +292,7 @@ func SetupServer(ip string, port string, database *mongo.Client, cfConfig *helpe
 				} else {
 					certStatus := helper.NewCertRequestStatus(cfConfig, database)
 					myUser := helper.MyUser{
-						Email: "milu@milu.moe",
+						Email: cfConfig.AuthEmail,
 					}
 					certChan := certStatus.RequestCert(clusterID.Hex(), &myUser)
 					certificates := <-certChan // 等待证书或错误
@@ -584,34 +584,13 @@ func SetupServer(ip string, port string, database *mongo.Client, cfConfig *helpe
 	{
 		// rank 路由
 		api.GET("/rank", func(c *gin.Context) {
-			trafficList, err := GetClusterTrafficDetails(database, DatabaseName)
+			clusters, err := GetClusterTrafficDetails(database, DatabaseName, ClusterCollection, TrafficCollection)
 			if err != nil {
 				log.Fatal(err)
 				c.JSON(http.StatusInternalServerError, gin.H{
 					"error": err.Error(),
 				})
 			}
-			var clusters []ClusterResponse
-			for _, traffic := range trafficList {
-				cluster, err := GetClusterById(database, DatabaseName, ClusterCollection, traffic.ClusterID)
-				if err != nil {
-					log.Println("Error fetching cluster:", err)
-					continue
-				}
-
-				response := ClusterResponse{
-					ClusterID: cluster.ClusterID,
-					Name:      cluster.Name,
-					CreateAt:  cluster.CreateAt,
-					IsBanned:  cluster.IsBanned,
-					Byoc:      cluster.Byoc,
-					Flavor:    cluster.Flavor,
-					Metric:    traffic,
-				}
-
-				clusters = append(clusters, response)
-			}
-
 			c.JSON(http.StatusOK, clusters)
 		})
 	}
