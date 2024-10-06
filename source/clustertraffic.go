@@ -24,6 +24,7 @@ type ClusterResponse struct {
 	ClusterID bson.ObjectID `json:"_id"`
 	Name      string        `json:"name"`
 	CreateAt  bson.DateTime `json:"createAt"`
+	IsEnable  bool          `json:"isEnable"`
 	IsBanned  bool          `json:"isBanned"`
 	Flavor    any           `json:"flavor"`
 	Metric    any           `json:"metric"`
@@ -130,13 +131,14 @@ func GetClusterTrafficDetails(client *mongo.Client, dbName, ClusterCollection, T
 				ID       bson.ObjectID `bson:"_id"`
 				Name     string        `bson:"name"`
 				CreateAt bson.DateTime `bson:"createAt"`
+				IsEnable bool          `bson:"isEnable"`
 				IsBanned bool          `bson:"isBanned"`
 				Flavor   any           `bson:"flavor"`
 			} `bson:"cluster_info"`
-			PendRequest int   `bson:"pendRequest"`
-			PendTraffic int64 `bson:"pendTraffic"`
 			Request     int   `bson:"request"`
 			Traffic     int   `bson:"traffic"`
+			PendRequest int   `bson:"pendRequest"`
+			PendTraffic int64 `bson:"pendTraffic"`
 		}
 
 		if err := cursor.Decode(&result); err != nil {
@@ -148,6 +150,7 @@ func GetClusterTrafficDetails(client *mongo.Client, dbName, ClusterCollection, T
 			ClusterID: result.ClusterInfo.ID,
 			Name:      result.ClusterInfo.Name,
 			CreateAt:  result.ClusterInfo.CreateAt,
+			IsEnable:  result.ClusterInfo.IsEnable,
 			IsBanned:  result.ClusterInfo.IsBanned,
 			Flavor:    result.ClusterInfo.Flavor,
 			Metric: bson.M{

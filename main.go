@@ -80,6 +80,12 @@ func main() {
 		return
 	}
 
+	// 初始化 enable
+	err = source.UpdateIsEnable(database, source.DatabaseName, source.ClusterCollection)
+	if err != nil {
+		logger.Error("%v", err)
+	}
+
 	// 输出同步源的数量和详细信息
 	logger.Info("Number of sync sources: %d", len(Config.SyncSources))
 	for i, syncSource := range Config.SyncSources {

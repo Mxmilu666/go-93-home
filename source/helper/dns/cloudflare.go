@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 )
@@ -84,8 +85,14 @@ func AddDNSRecord(email, apiToken, zoneID string, record DNSRecord) error {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusCreated {
-		return fmt.Errorf("failed to add DNS record, status: %s", resp.Status)
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	bodyString := string(bodyBytes)
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to add DNS record, status: %s %s", resp.Status, bodyString)
 	}
 
 	return nil

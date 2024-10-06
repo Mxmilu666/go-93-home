@@ -161,7 +161,7 @@ func CheckFileHash(database *mongo.Client, oid bson.ObjectID) error {
 				Resolver: &net.Resolver{
 					PreferGo: false,
 					Dial: func(ctx context.Context, network, addr string) (net.Conn, error) {
-						return net.Dial("udp", "1.1.1.1:53")
+						return net.Dial("udp", "2606:4700:4700::1111:53")
 					},
 				},
 			}).DialContext,

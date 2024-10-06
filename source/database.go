@@ -19,6 +19,7 @@ type Cluster struct {
 	Name          string        `bson:"name"`
 	EndPoint      string        `bson:"endpoint"`
 	CreateAt      bson.DateTime `bson:"createAt"`
+	IsEnable      bool          `bson:"isEnable"`
 	IsBanned      bool          `bson:"isBanned"`
 	Byoc          bool          `bson:"byoc"`
 	Flavor        any           `bson:"flavor"`
@@ -241,4 +242,19 @@ func GetCertOrRequest(client *mongo.Client, dbName, collectionName string, clust
 
 	// 条件不满足，返回空结构体和 false
 	return CertInfo{}, false, nil
+}
+
+// 干掉所有节点
+func UpdateIsEnable(client *mongo.Client, databaseName, collectionName string) error {
+	collection := client.Database(databaseName).Collection(collectionName)
+
+	filter := map[string]interface{}{} // 匹配所有文档
+	update := map[string]interface{}{
+		"$set": map[string]interface{}{
+			"isEnable": false,
+		},
+	}
+
+	_, err := collection.UpdateMany(context.TODO(), filter, update)
+	return err
 }

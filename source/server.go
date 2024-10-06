@@ -9,6 +9,7 @@ import (
 	"log"
 	"math/rand"
 	"mime"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -184,12 +185,26 @@ func SetupServer(ip string, port string, database *mongo.Client, cfConfig *helpe
 					}
 
 					if !byoc {
-						record := dns.DNSRecord{
-							Type:    "A",
-							Name:    oid.Hex() + "." + cfConfig.Domain,
-							Content: host,
-							TTL:     60,
-							Proxied: false,
+						host = strings.Trim(host, "[]")
+						var record dns.DNSRecord
+						if net.ParseIP(host).To4() != nil {
+							// IPv4
+							record = dns.DNSRecord{
+								Type:    "A",
+								Name:    oid.Hex() + "." + cfConfig.Domain,
+								Content: host,
+								TTL:     60,
+								Proxied: false,
+							}
+						} else {
+							// IPv6
+							record = dns.DNSRecord{
+								Type:    "AAAA",
+								Name:    oid.Hex() + "." + cfConfig.Domain,
+								Content: host,
+								TTL:     60,
+								Proxied: false,
+							}
 						}
 						zoneID, err := dns.GetZoneID(cfConfig.AuthEmail, cfConfig.AuthKey, cfConfig.Domain)
 						if err != nil {
@@ -240,6 +255,13 @@ func SetupServer(ip string, port string, database *mongo.Client, cfConfig *helpe
 							var newCluster = Clusters{
 								ClusterID: oid,
 								Endpoint:  endpoint,
+							}
+							setcluster := bson.M{
+								"isEnable": true,
+							}
+							err = UpdateClusterFieldsById(database, DatabaseName, ClusterCollection, oid, setcluster)
+							if err != nil {
+								logger.Error("%v", err)
 							}
 							onlineClusters = append(onlineClusters, newCluster)
 							logger.Info("cluster %v successfully enabled", oid)
@@ -331,6 +353,13 @@ func SetupServer(ip string, port string, database *mongo.Client, cfConfig *helpe
 			clusterID, exists := sessionToClusterMap[session]
 			if exists {
 				delete(sessionToClusterMap, string(client.Id()))
+				setcluster := bson.M{
+					"isEnable": false,
+				}
+				err = UpdateClusterFieldsById(database, DatabaseName, ClusterCollection, oid, setcluster)
+				if err != nil {
+					logger.Error("%v", err)
+				}
 				removeClusterByID(clusterID)
 				logger.Info("Found ClusterID: %s for session: %s\n", clusterID.Hex(), session)
 				ack := datas[len(datas)-1].(func([]any, error))
