@@ -32,10 +32,16 @@ type SSlConfig struct {
 	AuthKey      string `yaml:"authKey"`
 }
 
+type LoginOAuthConfig struct {
+	ClientID     string `yaml:"clientid"`
+	ClientSecret string `yaml:"clientsecret"`
+}
+
 type Config struct {
 	Server      ServerConfig       `yaml:"server"`
 	Database    DatabaseConfig     `yaml:"database"`
 	SSL         SSlConfig          `yaml:"cert"`
+	GitHubOAuth LoginOAuthConfig   `yaml:"oauth"`
 	SyncSources []SyncSourceConfig `yaml:"syncSources"`
 }
 
@@ -56,6 +62,10 @@ func CreateDefaultConfig(filename string) error {
 			DNSProviders: "cloudflare",
 			AuthEmail:    "114514@114514.com",
 			AuthKey:      "unify_is_dl_114514",
+		},
+		GitHubOAuth: LoginOAuthConfig{
+			ClientID:     "114514",
+			ClientSecret: "1919810",
 		},
 		SyncSources: []SyncSourceConfig{
 			{

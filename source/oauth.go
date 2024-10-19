@@ -24,7 +24,7 @@ type OAuthConfig struct {
 }
 
 // GitHub 的 OAuth 配置
-func getGitHubOAuthConfig(c *gin.Context) OAuthConfig {
+func getGitHubOAuthConfig(c *gin.Context, githubClientID, githubClientSecret string) OAuthConfig {
 	proto := "http"
 	if c.Request.Header.Get("X-Forwarded-Proto") != "" {
 		proto = c.Request.Header.Get("X-Forwarded-Proto")

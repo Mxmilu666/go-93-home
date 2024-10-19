@@ -124,5 +124,5 @@ func main() {
 	cfConfig := helper.NewCloudflareConfig(Config.SSL.AuthEmail, Config.SSL.AuthKey, Config.SSL.Domain)
 
 	// 启动服务器
-	source.SetupServer(Config.Server.Address, fmt.Sprintf("%d", Config.Server.Port), database, cfConfig)
+	source.SetupServer(Config.Server.Address, fmt.Sprintf("%d", Config.Server.Port), database, cfConfig, Config)
 }

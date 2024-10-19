@@ -1,0 +1,22 @@
+server:
+  address: 0.0.0.0
+  port: 8080
+database:
+  address: home.5k.work
+  port: 27017
+  username: root
+  password: WNG1qBxpxD9HwNYN
+cert:
+  domain: cluster.wz-clouds.com
+  dns: cloudflare
+  aurhEmail:  mxmilu666@163.com
+  authKey: 27c01db9fa14c35bf259d95e852436383ad55
+syncSources:
+- name: 93hub
+  url: https://github.com/Mxmilu666/bangbang93HUB.git
+  branch: main
+  destDir: 93hub
+- name: lxhtthub
+  url: https://github.com/Dongyanmio/LxHTTHUB.git
+  branch: main
+  destDir: lxhtthub

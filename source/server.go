@@ -85,7 +85,7 @@ func filterLogs() gin.HandlerFunc {
 	}
 }
 
-func SetupServer(ip string, port string, database *mongo.Client, cfConfig *helper.CloudflareConfig) {
+func SetupServer(ip string, port string, database *mongo.Client, cfConfig *helper.CloudflareConfig, Config *Config) {
 	gin.SetMode(gin.ReleaseMode)
 
 	server := socket.NewServer(nil, nil)
@@ -625,7 +625,7 @@ func SetupServer(ip string, port string, database *mongo.Client, cfConfig *helpe
 
 		// login 路由
 		api.GET("/login/github", func(c *gin.Context) {
-			config := getGitHubOAuthConfig(c)
+			config := getGitHubOAuthConfig(c, Config.GitHubOAuth.ClientID, Config.GitHubOAuth.ClientID)
 			loginWithOAuth(c, config)
 		})
 
