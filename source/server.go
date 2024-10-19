@@ -622,6 +622,13 @@ func SetupServer(ip string, port string, database *mongo.Client, cfConfig *helpe
 			}
 			c.JSON(http.StatusOK, clusters)
 		})
+
+		// login 路由
+		api.GET("/login/github", func(c *gin.Context) {
+			config := getGitHubOAuthConfig(c)
+			loginWithOAuth(c, config)
+		})
+
 	}
 	// 下载文件
 	r.GET("/files/*filepath", func(c *gin.Context) {
